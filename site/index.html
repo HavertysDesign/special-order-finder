@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Special Order Finder</title>
+<meta name="description" content="Search special-order vendor catalogs by description or photo.">
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#333d49">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="SO Finder">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Tinos&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav class="nav">
+  <a class="logo" href="./">SOF<b>Special Order Finder</b></a>
+  <div class="navlinks">
+    <a href="#" id="browseLink" class="hide-sm">Shop by Type</a>
+    <button id="boardBtn" class="pill" aria-label="Saved pieces">♥ <span id="boardCount">0</span></button>
+  </div>
+</nav>
+
+<div class="wrap">
+  <section class="banner" id="dropZone">
+    <h1>Find It Special Order</h1>
+    <p class="lead" id="catalogInfo">Loading vendor catalogs…</p>
+    <form id="searchForm" class="search" autocomplete="off">
+      <div class="qrow">
+        <input id="q" type="search" placeholder="Describe the piece, e.g. curved boucle swivel chair" aria-label="Describe the piece">
+        <label class="iconbtn" title="Search by photo" aria-label="Search by photo">
+          <input id="photo" type="file" accept="image/*" hidden>
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M9 3 7.2 5H4a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-3.2L15 3H9Zm3 5a5 5 0 1 1 0 10 5 5 0 0 1 0-10Zm0 2a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/></svg>
+        </label>
+        <button type="submit" class="go">Search</button>
+      </div>
+      <div id="photoChip" class="chip photo" hidden>
+        <img id="photoThumb" alt="">
+        <span>Matching this photo. Add words to refine it.</span>
+        <button type="button" id="clearPhoto" aria-label="Remove photo">✕</button>
+      </div>
+      <div id="likeChip" class="chip photo" hidden>
+        <img id="likeThumb" alt="">
+        <span id="likeLabel">Similar to…</span>
+        <button type="button" id="clearLike" aria-label="Clear">✕</button>
+      </div>
+      <p class="bhint">Tip: paste or drag a photo anywhere on this page.</p>
+    </form>
+  </section>
+
+  <div class="filters">
+    <div id="typeChips" class="chips" aria-label="Type"></div>
+    <label class="sel">Vendor
+      <select id="vendorSel"><option value="">All vendors</option></select>
+    </label>
+    <label class="sel narrow">Max width (in)
+      <input id="maxW" type="number" inputmode="numeric" min="1" placeholder="Any">
+    </label>
+  </div>
+
+  <div id="status" class="status" role="status" aria-live="polite"></div>
+  <section id="results" class="grid" aria-label="Results"></section>
+  <div class="more"><button id="moreBtn" class="btn" hidden>Show more</button></div>
+
+  <section id="empty">
+    <h2 class="section-title">Try a search</h2>
+    <div class="examples" id="examples"></div>
+    <h2 class="section-title">Shop by Type</h2>
+    <div class="tiles" id="tiles"></div>
+  </section>
+
+  <footer class="foot">Results link to each vendor's own site, which is the source of truth for pricing, availability and specs. <span id="updated"></span></footer>
+</div>
+
+<aside id="board" class="board" hidden aria-label="Saved pieces">
+  <div class="boardhead">
+    <h2>Saved Pieces</h2>
+    <button id="closeBoard" aria-label="Close">✕</button>
+  </div>
+  <div id="boardList" class="boardlist"></div>
+  <div class="boardactions">
+    <button class="btn primary" id="copyBoard">Copy list</button>
+    <button class="btn" id="clearBoard">Clear</button>
+  </div>
+</aside>
+
+<template id="cardTpl">
+  <article class="card">
+    <a class="imgwrap" target="_blank" rel="noopener"><img loading="lazy" alt=""></a>
+    <div class="vendor"></div>
+    <h3 class="name"></h3>
+    <div class="meta"></div>
+    <div class="actions">
+      <a class="link" target="_blank" rel="noopener">View at vendor ↗</a>
+      <button class="similar" title="Find similar pieces">Similar</button>
+      <button class="save" aria-label="Save">♡</button>
+    </div>
+  </article>
+</template>
+<script type="module" src="app.js"></script>
+</body>
+</html>

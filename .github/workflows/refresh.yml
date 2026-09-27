@@ -1,0 +1,64 @@
+name: Refresh catalog and publish site
+on:
+  schedule:
+    - cron: '17 7 * * 0'   # Sundays ~3am Eastern
+  workflow_dispatch:
+    inputs:
+      vendors:
+        description: 'Only refresh these vendor jobs (space separated). Blank = all.'
+        required: false
+        default: ''
+      skip_scrape:
+        description: 'Skip scraping (just rebuild and publish from the saved catalog)'
+        type: boolean
+        default: false
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+concurrency: { group: refresh, cancel-in-progress: false }
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    environment: { name: github-pages, url: '${{ steps.deploy.outputs.page_url }}' }
+    env:
+      GH_TOKEN: ${{ github.token }}
+      LEFTBANK_USER: ${{ secrets.LEFTBANK_USER }}
+      LEFTBANK_PASS: ${{ secrets.LEFTBANK_PASS }}
+      LIBERTY_USER: ${{ secrets.LIBERTY_USER }}
+      LIBERTY_PASS: ${{ secrets.LIBERTY_PASS }}
+      JOBS: '8'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11', cache: pip }
+      - run: pip install -r requirements.txt && python -m playwright install --with-deps chromium
+        # Pulaski, Huntington House: their sites block cloud servers, so their data is refreshed from a computer and kept as-is here.
+      - run: embed/get_models.sh
+      - name: Restore last catalog + photo-embedding cache
+        run: |
+          mkdir -p state data
+          gh release download catalog-state -D state -p '*' || echo "no previous state"
+          [ -f state/data.tar.gz ] && tar -xzf state/data.tar.gz || true
+          [ -f state/emb_cache.sqlite ] && cp state/emb_cache.sqlite embed/emb_cache.sqlite || true
+      - name: Scrape vendors
+        if: ${{ github.event.inputs.skip_scrape != 'true' }}
+        run: python scraper/run_all.py ${{ github.event.inputs.vendors }}
+      - name: Build catalog
+        run: python build_catalog.py
+      - name: Embed new product photos
+        run: embed/loop.sh "$PWD/catalog_full.json" "$PWD/embed/emb_cache.sqlite"
+      - name: Build site data
+        run: python build_site_data.py
+      - name: Save state for next run
+        if: always()
+        run: |
+          tar -czf state/data.tar.gz data
+          cp embed/emb_cache.sqlite state/emb_cache.sqlite || true
+          gh release view catalog-state >/dev/null 2>&1 || gh release create catalog-state --title "Catalog state (internal)" --notes "Scraped data and embedding cache used by the weekly refresh."
+          gh release upload catalog-state state/data.tar.gz state/emb_cache.sqlite --clobber
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: site }
+      - id: deploy
+        uses: actions/deploy-pages@v4
