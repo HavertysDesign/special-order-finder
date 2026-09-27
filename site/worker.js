@@ -1,5 +1,5 @@
 // Search worker: loads catalog + embeddings, runs CLIP (MobileCLIP-S0) models in-browser.
-import { env, AutoTokenizer, CLIPTextModelWithProjection, AutoProcessor, CLIPVisionModelWithProjection, RawImage } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.1';
+import { env, pipeline, AutoTokenizer, CLIPTextModelWithProjection, AutoProcessor, CLIPVisionModelWithProjection, RawImage } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.1';
 env.allowLocalModels = false;
 const MODEL = 'Xenova/mobileclip_s0';
 let META = null, EMB = null, DIM = 0, N = 0, PCA = null, TXT = null, NAMELC = null, VENDORS = [], TYPES = [];
@@ -66,14 +66,14 @@ async function embedText(q) {
   const { text_embeds } = await textModel(inputs);
   return project(norm(text_embeds.data));
 }
-async function embedImage(blob) {
+async function embedImage(blob) { const bmp = await createImageBitmap(blob); return embedRegion(bmp, 0, 0, bmp.width, bmp.height); }
+async function embedRegion(bmp, sx, sy, sw, sh) {
   await loadVision();
   // pad to white square so whole object is kept (matches catalog processing)
-  const bmp = await createImageBitmap(blob);
-  const S = Math.max(bmp.width, bmp.height), T = 512, sc = T / S;
+  const S = Math.max(sw, sh), T = 512, sc = T / S;
   const cv = new OffscreenCanvas(T, T), cx = cv.getContext('2d');
   cx.fillStyle = '#fff'; cx.fillRect(0, 0, T, T);
-  cx.drawImage(bmp, (T - bmp.width * sc) / 2, (T - bmp.height * sc) / 2, bmp.width * sc, bmp.height * sc);
+  cx.drawImage(bmp, sx, sy, sw, sh, (T - sw * sc) / 2, (T - sh * sc) / 2, sw * sc, sh * sc);
   const d = cx.getImageData(0, 0, T, T);
   const img = new RawImage(d.data, T, T, 4).rgb();
   const { image_embeds } = await visionModel(await proc(img));
@@ -138,11 +138,127 @@ async function search({ q, image, likeId, filters, limit }) {
   post('results', { items, total: idx.length, ms: Math.round(performance.now() - t0), note });
 }
 
+
+// ---------- Shop the room ----------
+// Open-vocabulary detector (OWL-ViT) finds the pieces; each piece is then matched with the same photo search.
+const DET_LABELS = {
+  'sofa': 'Sofas & Sectionals', 'sectional sofa': 'Sofas & Sectionals', 'armchair': 'Chairs & Seating', 'accent chair': 'Chairs & Seating',
+  'dining chair': 'Chairs & Seating', 'ottoman': 'Chairs & Seating', 'bench': 'Chairs & Seating', 'bar stool': 'Chairs & Seating',
+  'coffee table': 'Tables', 'side table': 'Tables', 'console table': 'Tables', 'dining table': 'Tables',
+  'bed': 'Beds', 'nightstand': 'Dressers & Nightstands', 'dresser': 'Dressers & Nightstands', 'sideboard': 'Dining Storage',
+  'bookcase': 'Cabinets & Shelving', 'cabinet': 'Cabinets & Shelving', 'desk': 'Desks & Office', 'rug': 'Rugs',
+  'table lamp': 'Lighting', 'floor lamp': 'Lighting', 'pendant light': 'Lighting', 'chandelier': 'Lighting',
+  'mirror': 'Mirrors', 'framed wall art': 'Wall Art', 'painting': 'Wall Art', 'picture frame': 'Wall Art', 'throw pillow': 'Pillows & Throws', 'throw blanket': 'Pillows & Throws',
+  'vase': 'Decor & Accessories', 'decorative bowl': 'Decor & Accessories', 'potted plant': 'Botanicals',
+};
+let detReady = null, detector = null, ROOM = null, TYPE_EMB = null;
+const TYPE_PROMPTS = {
+  'Sofas & Sectionals': ['a sofa', 'a sectional sofa', 'a loveseat'], 'Chairs & Seating': ['an armchair', 'an accent chair', 'an ottoman', 'a pouf', 'a bench', 'a stool', 'a dining chair'],
+  'Tables': ['a coffee table', 'a side table', 'a dining table', 'a console table'], 'Beds': ['a bed', 'an upholstered bed', 'a headboard'],
+  'Dressers & Nightstands': ['a dresser', 'a nightstand', 'a chest of drawers'], 'Dining Storage': ['a sideboard', 'a buffet cabinet'],
+  'Cabinets & Shelving': ['a bookcase', 'a cabinet', 'a media console'], 'Desks & Office': ['a desk'], 'Lighting': ['a table lamp', 'a floor lamp', 'a pendant light', 'a chandelier', 'a wall sconce'],
+  'Rugs': ['an area rug', 'a round rug on the floor', 'a carpet'], 'Wall Art': ['framed wall art', 'an abstract painting', 'a framed print'], 'Mirrors': ['a wall mirror', 'a mirror'],
+  'Pillows & Throws': ['a throw pillow', 'a decorative cushion', 'a throw blanket'], 'Bedding': ['a duvet cover', 'bed sheets and shams'],
+  'Decor & Accessories': ['a vase', 'a decorative bowl', 'a sculpture', 'decorative objects'], 'Botanicals': ['a potted plant', 'flowering branches in a vase', 'a faux tree'], 'Outdoor': ['outdoor patio furniture'],
+};
+async function typeEmbeddings() {
+  if (TYPE_EMB) return TYPE_EMB;
+  await loadText(); TYPE_EMB = [];
+  for (const t of TYPES) {
+    const ps = (TYPE_PROMPTS[t] || [t]).map(p => 'a photo of ' + p);
+    const { text_embeds } = await textModel(tok(ps, { padding: 'max_length', truncation: true }));
+    const d = text_embeds.dims[1], avg = new Float32Array(d);
+    for (let r = 0; r < ps.length; r++) { const v = norm(text_embeds.data.slice(r * d, (r + 1) * d)); for (let j = 0; j < d; j++) avg[j] += v[j]; }
+    TYPE_EMB.push(project(norm(avg)));
+  }
+  return TYPE_EMB;
+}
+function loadDetector() {
+  if (!detReady) detReady = (async () => {
+    detector = await pipeline('zero-shot-object-detection', 'Xenova/owlvit-base-patch32', { dtype: 'q8', progress_callback: progressCb('Loading room AI') });
+    post('ready', { which: 'detector' });
+  })();
+  return detReady;
+}
+function iou(a, b) {
+  const x1 = Math.max(a.x, b.x), y1 = Math.max(a.y, b.y), x2 = Math.min(a.x + a.w, b.x + b.w), y2 = Math.min(a.y + a.h, b.y + b.h);
+  const inter = Math.max(0, x2 - x1) * Math.max(0, y2 - y1); return inter / (a.w * a.h + b.w * b.h - inter);
+}
+async function roomDetect({ image }) {
+  const bmp = await createImageBitmap(image);
+  ROOM = { bmp, W: bmp.width, H: bmp.height };
+  await Promise.all([loadDetector(), loadVision()]);
+  post('roomStage', { text: 'Finding the pieces in the photo…' });
+  const S = 768, sc = Math.min(1, S / Math.max(bmp.width, bmp.height));
+  const w = Math.round(bmp.width * sc), h = Math.round(bmp.height * sc);
+  const cv = new OffscreenCanvas(w, h); cv.getContext('2d').drawImage(bmp, 0, 0, w, h);
+  const img = new RawImage(cv.getContext('2d').getImageData(0, 0, w, h).data, w, h, 4).rgb();
+  const labels = Object.keys(DET_LABELS);
+  const raw = await detector(img, labels.map(l => 'a photo of a ' + l), { threshold: 0.06, topk: 80 });
+  let boxes = raw.map(o => ({ label: o.label.replace('a photo of a ', ''), score: o.score,
+    x: o.box.xmin / sc, y: o.box.ymin / sc, w: (o.box.xmax - o.box.xmin) / sc, h: (o.box.ymax - o.box.ymin) / sc }))
+    .filter(b => b.w > 12 && b.h > 12 && (b.w * b.h) / (ROOM.W * ROOM.H) < 0.8);
+  boxes.sort((a, b) => b.score - a.score);
+  const keep = [];
+  const perType = {};
+  for (const b of boxes) {
+    const t = DET_LABELS[b.label], cap = t === 'Chairs & Seating' || t === 'Wall Art' ? 4 : 2;
+    if ((perType[t] || 0) >= cap) continue;
+    if (keep.every(k => iou(k, b) < (DET_LABELS[k.label] === t ? 0.4 : 0.75))) { keep.push(b); perType[t] = (perType[t] || 0) + 1; }
+    if (keep.length >= 14) break;
+  }
+  keep.sort((a, b) => (b.w * b.h) - (a.w * a.h)); // biggest pieces first
+  keep.forEach((b, i) => { b.id = i + 1; });
+  post('roomBoxes', { boxes: keep, W: ROOM.W, H: ROOM.H });
+  for (const b of keep) await roomMatch({ box: b });
+  post('roomStage', { text: '' });
+}
+async function roomMatch({ box, typeName, filters, limit }) {
+  if (!ROOM) return;
+  const pad = 0.06, x = Math.max(0, box.x - box.w * pad), y = Math.max(0, box.y - box.h * pad);
+  const w = Math.min(ROOM.W - x, box.w * (1 + 2 * pad)), h = Math.min(ROOM.H - y, box.h * (1 + 2 * pad));
+  const v = await embedRegion(ROOM.bmp, x, y, w, h);
+  const s = dotAll(v);
+  // decide the piece's type: detector label, checked against what the photo actually matches
+  let ti = typeName != null ? TYPES.indexOf(typeName) : -1;
+  if (ti < 0) {
+    // zero-shot: how much does the cut-out look like each type (photo vs. type descriptions)
+    const TE = await typeEmbeddings();
+    const zs = TE.map(e => { let a = 0; for (let j = 0; j < DIM; j++) a += e[j] * v[j]; return a; });
+    const mx = Math.max(...zs), ex = zs.map(z => Math.exp((z - mx) * 60)), se = ex.reduce((a, b) => a + b, 0);
+    const score = ex.map(x => x / se);
+    // plus what the closest catalog products are, plus the detector's own label
+    const top = [...s.keys()].sort((a, b) => s[b] - s[a]).slice(0, 30), votes = new Array(TYPES.length).fill(0);
+    top.forEach((i) => { votes[META.t[i]] += 1 / 30; });
+    const lt = TYPES.indexOf(DET_LABELS[box.label] || '');
+    const tot = score.map((z, k) => z + 0.35 * votes[k]);
+    ti = tot.indexOf(Math.max(...tot));
+    // the detector's label wins when the photo agrees it's at least plausible (it sees context the cut-out loses)
+    const rank = [...score.keys()].sort((a, b) => score[b] - score[a]);
+    if (lt >= 0 && (rank.indexOf(lt) < 3 || score[lt] > 0.08)) ti = lt;
+    box.debug = { label: box.label, zs: TYPES[score.indexOf(Math.max(...score))], vote: TYPES[votes.indexOf(Math.max(...votes))] };
+  }
+  const f = filters || {}; const vset = f.vendors && f.vendors.length ? new Set(f.vendors) : null;
+  const idx = [];
+  for (let i = 0; i < N; i++) {
+    if (META.t[i] !== ti) continue;
+    if (vset && !vset.has(META.v[i])) continue;
+    if (f.maxW && META.w[i] && META.w[i] > f.maxW) continue;
+    idx.push(i);
+  }
+  idx.sort((a, b) => s[b] - s[a]);
+  const out = [], seenImg = new Set(), seenName = new Set();
+  for (const i of idx) { const k = META.v[i] + '|' + NAMELC[i]; if (seenImg.has(META.i[i]) || seenName.has(k)) continue; seenImg.add(META.i[i]); seenName.add(k); out.push(i); if (out.length >= (limit || 12)) break; }
+  post('roomRow', { id: box.id, typeName: TYPES[ti], title: (DET_LABELS[box.label] === TYPES[ti] ? box.label : null), debug: box.debug, items: out.map(i => ({ id: i, n: META.n[i], i: META.i[i], u: META.u[i], v: VENDORS[META.v[i]], c: META.c[i], d: META.d[i], s: META.s[i] })) });
+}
+
 self.onmessage = async (e) => {
   const m = e.data;
   try {
     if (m.type === 'init') await loadCatalog();
     else if (m.type === 'warm') { m.which === 'vision' ? loadVision() : loadText(); }
     else if (m.type === 'search') await search(m);
+    else if (m.type === 'room') await roomDetect(m);
+    else if (m.type === 'roomMatch') await roomMatch(m);
   } catch (err) { post('error', { message: String(err && err.message || err) }); }
 };

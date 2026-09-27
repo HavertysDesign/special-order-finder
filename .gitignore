@@ -25,3 +25,5 @@ __pycache__/
 tmp/
 scraper/t*.py
 state/
+embed/hfcache/
+test_*.py

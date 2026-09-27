@@ -114,14 +114,17 @@ worker.onmessage = (e) => {
     renderTypes();
     worker.postMessage({ type: 'warm', which: 'text' });
     if (pending) { pending = false; run(); }
-  } else if (m.type === 'progress') { if (running || !state.textReady) progressStatus(m.label, m.pct); }
+  } else if (m.type === 'progress') { if (running || room.busy || !state.textReady) progressStatus(m.label, m.pct); }
   else if (m.type === 'ready') {
     if (m.which === 'text') { state.textReady = true; if ($('#q').value.trim() && state.lastNote === 'keyword') run(); else if (!running) setStatus(''); }
     if (m.which === 'vision') state.visionReady = true;
   } else if (m.type === 'results') {
     running = false; state.lastNote = m.note; render(m.items, m.total, m.ms, m.note);
     if (pending) { pending = false; run(); }
-  } else if (m.type === 'error') { running = false; setStatus('Something went wrong: ' + m.message); }
+  } else if (m.type === 'roomBoxes') { onRoomBoxes(m); setStatus(''); }
+  else if (m.type === 'roomRow') { onRoomRow(m); }
+  else if (m.type === 'roomStage') { if (m.text) setStatus(m.text); else { room.busy = false; setStatus(''); } }
+  else if (m.type === 'error') { running = false; room.busy = false; setStatus('Something went wrong: ' + m.message); }
 };
 worker.postMessage({ type: 'init' });
 
@@ -161,5 +164,96 @@ const dz = document.body;
 dz.addEventListener('dragover', (e) => { e.preventDefault(); $('#dropZone').classList.add('drag'); });
 dz.addEventListener('dragleave', (e) => { if (!e.relatedTarget) $('#dropZone').classList.remove('drag'); });
 dz.addEventListener('drop', (e) => { e.preventDefault(); $('#dropZone').classList.remove('drag'); setPhoto(e.dataTransfer.files[0]); });
+
+
+// ---------- Shop the room ----------
+const room = { boxes: [], W: 0, H: 0, active: null, drawing: false, nextId: 100, busy: false };
+function roomFilters() { return { vendors: state.vendor === '' ? [] : [Number(state.vendor)], maxW: state.maxW }; }
+function startRoom(file) {
+  if (!file || !file.type.startsWith('image/')) return;
+  if (!state.catalogReady) { setStatus('One moment, the catalog is still loading…'); setTimeout(() => startRoom(file), 800); return; }
+  $('#room').hidden = false; $('#results').innerHTML = ''; $('#moreBtn').hidden = true; $('#empty').hidden = true;
+  $('#roomImg').src = URL.createObjectURL(file); $('#roomBoxes').innerHTML = '';
+  $('#roomRows').innerHTML = '<div class="rrwait">Looking at the photo… The first time, the room AI takes a minute to download.</div>';
+  room.boxes = []; room.busy = true; setDraw(false);
+  worker.postMessage({ type: 'room', image: file });
+  $('#room').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+const NICE = { 'picture frame': 'wall art', 'painting': 'wall art', 'framed wall art': 'wall art' };
+function titleFor(b) { if (b.title) { const t = NICE[b.title] || b.title; return t.charAt(0).toUpperCase() + t.slice(1); } return b.typeName ? b.typeName : (b.label || 'Piece'); }
+function drawBoxes() {
+  const L = $('#roomBoxes'); L.innerHTML = '';
+  for (const b of room.boxes) {
+    const d = document.createElement('div'); d.className = 'rbox' + (b.drawn ? ' drawn' : '') + (room.active === b.id ? ' on' : '');
+    d.style.left = (100 * b.x / room.W) + '%'; d.style.top = (100 * b.y / room.H) + '%';
+    d.style.width = (100 * b.w / room.W) + '%'; d.style.height = (100 * b.h / room.H) + '%';
+    const s = document.createElement('span'); s.textContent = b.n; d.appendChild(s);
+    d.onclick = (e) => { if (room.drawing) return; e.stopPropagation(); focusRow(b.id); };
+    L.appendChild(d);
+  }
+}
+function focusRow(id) {
+  room.active = id; drawBoxes();
+  document.querySelectorAll('.rrow').forEach((r) => r.classList.toggle('on', r.dataset.id == id));
+  const r = document.querySelector(`.rrow[data-id="${id}"]`); if (r) r.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+function renumber() { room.boxes.forEach((b, i) => { b.n = i + 1; }); }
+function rowFor(b) {
+  let r = document.querySelector(`.rrow[data-id="${b.id}"]`);
+  if (!r) {
+    const wait = $('#roomRows .rrwait'); if (wait) wait.remove();
+    r = document.createElement('div'); r.className = 'rrow'; r.dataset.id = b.id;
+    r.innerHTML = '<div class="rrhead"><span class="num"></span><strong></strong><select aria-label="Type of piece"></select><button class="x" type="button" aria-label="Remove this piece">✕</button></div><div class="rrscroll"><div class="rrwait">Finding matches…</div></div>';
+    const sel = r.querySelector('select');
+    TYPES.forEach((t) => { const o = document.createElement('option'); o.value = t; o.textContent = t; sel.appendChild(o); });
+    sel.onchange = () => { b.typeName = sel.value; b.title = null; r.querySelector('.rrscroll').innerHTML = '<div class="rrwait">Finding matches…</div>'; worker.postMessage({ type: 'roomMatch', box: b, typeName: sel.value, filters: roomFilters() }); };
+    r.querySelector('.x').onclick = () => { room.boxes = room.boxes.filter((x) => x !== b); r.remove(); renumber(); drawBoxes(); document.querySelectorAll('.rrow').forEach((rr) => { const bb = room.boxes.find((x) => x.id == rr.dataset.id); if (bb) rr.querySelector('.num').textContent = bb.n; }); };
+    r.onclick = (e) => { if (e.target.closest('select,button,a')) return; room.active = b.id; drawBoxes(); document.querySelectorAll('.rrow').forEach((x) => x.classList.toggle('on', x === r)); };
+    $('#roomRows').appendChild(r);
+  }
+  r.querySelector('.num').textContent = b.n; r.querySelector('strong').textContent = titleFor(b);
+  if (b.typeName) r.querySelector('select').value = b.typeName;
+  return r;
+}
+function onRoomBoxes(m) {
+  room.W = m.W; room.H = m.H; room.boxes = m.boxes.map((b) => ({ ...b })); renumber(); drawBoxes();
+  $('#roomRows').innerHTML = room.boxes.length ? '' : '<div class="rrwait">No pieces found automatically. Tap <b>Draw a box</b> and drag around a piece.</div>';
+  room.boxes.forEach(rowFor);
+}
+function onRoomRow(m) {
+  const b = room.boxes.find((x) => x.id === m.id); if (!b) return;
+  b.typeName = m.typeName; b.title = m.title; const r = rowFor(b); const sc = r.querySelector('.rrscroll'); sc.innerHTML = '';
+  if (!m.items.length) sc.innerHTML = '<div class="rrwait">No matches with the current vendor or width filter.</div>';
+  m.items.forEach((it) => { const c = card(it); c.querySelector('.similar').remove(); sc.appendChild(c); });
+}
+function setDraw(on) {
+  room.drawing = on; $('#drawBtn').setAttribute('aria-pressed', on);
+  $('#roomPhotoWrap').classList.toggle('drawing', on);
+  $('#roomHint').innerHTML = on ? '<b>Drag on the photo</b> around the piece you want to match.' : 'Numbered boxes show the pieces we found. Tap a box to jump to its matches. Missing something? Tap <b>Draw a box</b> and drag around it.';
+}
+$('#drawBtn').onclick = () => setDraw(!room.drawing);
+$('#closeRoom').onclick = () => { $('#room').hidden = true; room.boxes = []; setDraw(false); run(); };
+$('#roomPhoto').onchange = (e) => { startRoom(e.target.files[0]); e.target.value = ''; };
+(() => {
+  const wrap = $('#roomPhotoWrap'); let start = null, ghost = null;
+  const pt = (e) => { const r = $('#roomImg').getBoundingClientRect(); return { x: Math.min(Math.max(e.clientX - r.left, 0), r.width), y: Math.min(Math.max(e.clientY - r.top, 0), r.height), r }; };
+  wrap.addEventListener('pointerdown', (e) => {
+    if (!room.drawing || !room.W) return; e.preventDefault(); wrap.setPointerCapture(e.pointerId);
+    start = pt(e); ghost = document.createElement('div'); ghost.className = 'rbox drawn on'; $('#roomBoxes').appendChild(ghost);
+  });
+  wrap.addEventListener('pointermove', (e) => {
+    if (!start) return; const p = pt(e);
+    Object.assign(ghost.style, { left: Math.min(p.x, start.x) + 'px', top: Math.min(p.y, start.y) + 'px', width: Math.abs(p.x - start.x) + 'px', height: Math.abs(p.y - start.y) + 'px' });
+  });
+  wrap.addEventListener('pointerup', (e) => {
+    if (!start) return; const p = pt(e), r = p.r, k = room.W / r.width;
+    const box = { x: Math.min(p.x, start.x) * k, y: Math.min(p.y, start.y) * k, w: Math.abs(p.x - start.x) * k, h: Math.abs(p.y - start.y) * k };
+    start = null; ghost.remove(); ghost = null;
+    if (box.w < 15 || box.h < 15) return;
+    const b = { ...box, id: room.nextId++, drawn: true, label: 'Your selection' };
+    room.boxes.push(b); renumber(); drawBoxes(); rowFor(b); setDraw(false); focusRow(b.id);
+    worker.postMessage({ type: 'roomMatch', box: b, filters: roomFilters() });
+  });
+})();
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
