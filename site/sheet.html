@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Your Selections</title>
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#333d49">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Tinos&display=swap" rel="stylesheet">
+<style>
+[hidden]{display:none!important}
+:root{--ink:#23282e;--slate:#333d49;--steel:#4f5f72;--sage:#677d68;--clay:#99694c;--wheat:#e0ab6c;--line:#dcdfe3;--muted:#5d6670;--soft:#f3f4f5;
+  --serif:"Tinos","Times New Roman",Times,serif;--sans:Arial,"Helvetica Neue",Helvetica,sans-serif}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:#e9ebee;color:var(--ink);font:14px/1.4 var(--sans)}
+.toolbar{position:sticky;top:0;z-index:5;background:var(--slate);color:#fff;display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 16px}
+.toolbar .title{font:400 20px var(--serif);margin-right:auto}
+.toolbar button,.toolbar a{background:transparent;color:#fff;border:1px solid rgba(255,255,255,.5);border-radius:3px;padding:8px 14px;font:700 14px var(--sans);cursor:pointer;text-decoration:none}
+.toolbar button.primary{background:var(--clay);border-color:var(--clay)}
+.toolbar label{display:inline-flex;gap:6px;align-items:center;font-size:13px}
+.note{max-width:8.5in;margin:10px auto 0;padding:0 16px;color:var(--muted);font-size:13px}
+.page{background:#fff;max-width:8.5in;margin:14px auto 30px;padding:.55in .6in;box-shadow:0 2px 14px rgba(0,0,0,.12)}
+.head{display:flex;justify-content:space-between;gap:20px;border-bottom:3px solid var(--slate);padding-bottom:14px}
+.brand{font:400 30px/1 var(--serif);letter-spacing:.01em;color:var(--slate)}
+.brand small{display:block;font:700 11px var(--sans);letter-spacing:.14em;text-transform:uppercase;color:var(--clay);margin-top:6px}
+.who{text-align:right;font-size:13px;color:var(--muted)}
+.who h1{font:400 24px var(--serif);color:var(--ink);margin:0 0 4px}
+[contenteditable]{outline:none;border-radius:2px}
+[contenteditable]:empty:before{content:attr(data-ph);color:#9aa2ab}
+body.editing [contenteditable]{background:#fff8ec;box-shadow:0 0 0 1px #f0d9b5}
+.items{display:grid;grid-template-columns:1fr 1fr;gap:14px 22px;margin-top:18px}
+.item{display:flex;gap:12px;break-inside:avoid;page-break-inside:avoid;border-bottom:1px solid var(--line);padding-bottom:12px}
+.item .ph{flex:0 0 1.45in;height:1.45in;border:1px solid var(--line);background:#fff;display:grid;place-items:center;padding:4px}
+.item .ph img{max-width:100%;max-height:100%;object-fit:contain}
+.item h3{font:700 14px/1.25 var(--sans);margin:0 0 3px}
+.item .num{display:inline-block;min-width:20px;background:var(--wheat);color:var(--ink);font-size:11px;font-weight:700;text-align:center;margin-right:6px;padding:1px 4px}
+.item .dims{color:var(--muted);font-size:12px}
+.item .qty{font-size:12px;margin-top:4px}
+.item .nt{font-size:12px;margin-top:4px;color:var(--ink)}
+.item .nt b,.item .qty b{color:var(--clay);font-weight:700}
+.item .int{font-size:11px;color:var(--steel);margin-top:4px;word-break:break-all}
+.foot{display:flex;gap:18px;align-items:center;margin-top:20px;border-top:1px solid var(--line);padding-top:14px}
+.qr{flex:0 0 auto;text-align:center;font-size:11px;color:var(--muted)}
+.qr img{width:1.7in;height:1.7in;display:block;image-rendering:pixelated}
+.fine{font-size:11px;color:var(--muted);flex:1}
+.fine b{color:var(--ink)}
+@media (max-width:640px){
+  .page{padding:18px 16px;margin:10px 0}
+  .head{flex-direction:column}.who{text-align:left}
+  .items{grid-template-columns:1fr}
+  .item .ph{flex-basis:110px;height:110px}
+}
+@page{size:letter;margin:.45in}
+@media print{
+  body{background:#fff}
+  .toolbar,.note{display:none!important}
+  .page{box-shadow:none;margin:0;padding:0;max-width:none}
+  body.editing [contenteditable]{background:none;box-shadow:none}
+  .item .ph{flex-basis:1.3in;height:1.3in}
+}
+</style>
+</head>
+<body>
+<div class="toolbar" id="toolbar">
+  <span class="title">Selections Sheet</span>
+  <label id="intWrap" hidden><input type="checkbox" id="intChk"> Include vendor &amp; item # (internal copy)</label>
+  <button type="button" id="shareBtn">Text / share link</button>
+  <button type="button" id="copyBtn">Copy link</button>
+  <button type="button" class="primary" id="printBtn">Print</button>
+</div>
+<p class="note" id="editNote" hidden>Tip: tap the highlighted fields to add your name, store and phone. They're remembered on this device and appear on every sheet you make.</p>
+
+<main class="page" id="page">
+  <header class="head">
+    <div class="brand">Havertys<small>Special Order Selections</small></div>
+    <div class="who">
+      <h1 id="board"></h1>
+      <div id="date"></div>
+      <div>Designer: <span id="dz" data-ph="Your name"></span></div>
+      <div><span id="st" data-ph="Store"></span> · <span id="ph" data-ph="Phone"></span></div>
+    </div>
+  </header>
+  <section class="items" id="items"></section>
+  <footer class="foot">
+    <div class="qr" id="qrBox"><img id="qr" alt="QR code to view these selections"><div>Scan to view on your phone</div></div>
+    <div class="fine">
+      <p><b>These are special-order selections.</b> Finishes, fabrics, pricing and delivery timing are confirmed with your designer when your order is placed. Sizes are approximate and can vary slightly by finish.</p>
+      <p id="qrNote"></p>
+    </div>
+  </footer>
+</main>
+<script src="vendor/qrcode.js"></script>
+<script src="sheet.js"></script>
+</body>
+</html>

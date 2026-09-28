@@ -15,7 +15,9 @@ function custName(it) {
     const core = v.replace(/\s*\(.*\)\s*/, '').replace(/\s*(&\s*Company|Rugs|Furniture|Furnishings|Home|Company|Collection|Art Group|Group)$/i, '');
     if (core.length > 3) n = n.replace(new RegExp('(^|\\s)' + esc(core) + '(?=\\s|$)', 'ig'), ' ');
   }
-  n = n.replace(/\b(?=[A-Z0-9-]*\d)(?=[A-Z0-9-]*[A-Z])[A-Z0-9]{1,8}(?:[-_/][A-Z0-9]{1,8})+\b/g, ' ')   // ARHI-001, 104-BR-QSB
+  n = n.split(' | ')[0];
+  n = n.replace(/\b[A-Z]{2,3}\d{1,2}\b/g, ' ')                                          // HU1, BO4 (rug design codes)
+       .replace(/\b(?=[A-Z0-9-]*\d)(?=[A-Z0-9-]*[A-Z])[A-Z0-9]{1,8}(?:[-_/][A-Z0-9]{1,8})+\b/g, ' ')   // ARHI-001, 104-BR-QSB
        .replace(/\b\d{3,}(?:-\d+)+\b/g, ' ')                                                  // 7514-60
        .replace(/\b[A-Z]{1,5}\d{3,}[A-Z0-9]*\b/g, ' ')                                        // CVPDA124B, U533676
        .replace(/\b\d{4,}[A-Z]*\b/g, ' ')                                                     // 10007
@@ -133,6 +135,21 @@ $('#copyBoard').onclick = async () => {
   setTimeout(() => ($('#copyBoard').textContent = 'Copy list'), 1800);
 };
 renderBoard();
+// ---------- selections sheet (print / text / QR) ----------
+async function packSheet(obj) {
+  const bytes = new Uint8Array(await new Response(new Blob([new TextEncoder().encode(JSON.stringify(obj))]).stream().pipeThrough(new CompressionStream('deflate-raw'))).arrayBuffer());
+  let s = ''; bytes.forEach((x) => { s += String.fromCharCode(x); }); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+$('#sheetBoard').onclick = async () => {
+  const b = active(); if (!b.items.length) { toast('Save a few pieces to this board first.'); return; }
+  const w = window.open('', '_blank');   // open right away so pop-up blockers allow it
+  let me = {}; try { me = JSON.parse(localStorage.getItem('sof-designer') || '{}'); } catch {}
+  const it = b.items.map((x) => { const o = { n: custName(x), d: x.d || '', i: x.i }; if ((+x.qty || 1) > 1) o.q = +x.qty; if (x.note) o.o = x.note; return o; });
+  const sig = it.map((x) => x.i || x.n).join('|').length + ':' + it.map((x) => (x.n || '').slice(0, 6)).join('');
+  try { localStorage.setItem('sof-sheet-int', JSON.stringify({ sig, items: b.items.map((x) => ({ v: x.v, s: x.s, u: x.u })) })); } catch {}
+  const url = new URL('sheet.html', location.href).href + '#d=' + await packSheet({ b: b.name, t: Date.now(), dz: me.dz || '', st: me.st || '', ph: me.ph || '', it });
+  if (w) w.location = url; else location.href = url;
+};
 
 // ---------- UI ----------
 function setStatus(html) { $('#status').innerHTML = html; }
