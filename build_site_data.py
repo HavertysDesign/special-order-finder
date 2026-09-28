@@ -119,6 +119,36 @@ for _t in TYPES:
     _e=_etext(['a product photo of '+p for p in _TP[_t]]); _m=_e.mean(0); _TE.append(_m/np.linalg.norm(_m))
 _TE=np.stack(_TE); _L=(X@_TE.T)*100; _L-=_L.max(1,keepdims=True); _P=np.exp(_L); _P/=_P.sum(1,keepdims=True)
 _ci=0; _fix=0; _FIXLOG=[]
+# Botanicals = faux plants, florals, trees, stems and the planters/pots they come in. Nothing else.
+_ART_VENDORS={'left-bank','wendover','paragon','harp-finial'}
+_RUG_VENDORS={'dalyn','karastan','kas-rugs','oriental-weavers'}
+_PLANT=re.compile(r'\b(faux|artificial|silk|potted|planters?|pots?|topiar(y|ies)|plants?|trees?|stems?|sprays?|bouquets?|arrangements?|succulents?|orchids?|ferns?|palms?|olive|ficus|fig|eucalyptus|boxwood|greenery|garland|wreaths?|florals?|flowers?|blooms?|peon(y|ies)|roses?|hydrangeas?|magnolias?|branch(es)?|grass(es)?|moss|agave|aloe|cactus|cacti|echeveria|ivy|dracaena|monstera|philodendron|sansevieria|bamboo|botanical)\b',re.I)
+_NOTPLANT=re.compile(r'\b(art|print|canvas|painting|framed|frame|giclee|photograph|photography|wall decor|mirror|rug|runner|pillow|throw|table|desk|chair|sofa|bed|dresser|chest|cabinet|sideboard|console|bench|lamp|chandelier|pendant|sconce|stool|ottoman|bookcase|nightstand|server|buffet|credenza|wallpaper|mural|tray|clock|sculpture|charger|coaster|plate|platter|bowl|box|swatch|swatches|fabric|linen|base|pod|object|hall tree|figure|figurine|bookend)s?\b',re.I)
+_STRONG_PLANT=re.compile(r'\b(faux|artificial|potted|planters?|pots?|topiar(y|ies)|plants?|succulents?|stems?|arrangements?|bouquets?|greenery|wreaths?|garlands?)\b',re.I)
+_NOPLANT_CAT=re.compile(r'\b(art|print|canvas|photograph|photography|painting|wall decor|rugs?|furniture|upholstery|bedroom|dining|lighting|mirrors?|fabrics?|swatch(es)?|pillows?|bedding|trays?|sculptur\w*|occasional|tabletop|dinnerware)\b',re.I)
+def _botanical_ok(it,p=None):
+    if it['v']=='dw-silks': return True
+    if it['v'] in _ART_VENDORS or it['v'] in _RUG_VENDORS: return False
+    n=it['n']
+    if _NOTPLANT.search(n) or _NOPLANT_CAT.search(it['c'] or ''): return False
+    if _STRONG_PLANT.search(n): return True
+    # a plant word alone ("Fuyuki Tree") counts only when the photo clearly shows a plant
+    return bool(_PLANT.search(n)) and p is not None and p[TYPES.index('Botanicals')]>0.6
+def _dw_type(it):
+    n=it['n']
+    has_plant=' in ' in n.lower() or bool(_PLANT.search(n)) and not re.search(r'\b(stones?|gravel|river rock)\b',n,re.I) or ' with ' in n.lower()
+    if has_plant or re.search(r'\b(planters?|pots?)\b',n,re.I): return 'Botanicals'
+    if re.search(r'\b(stones?|gravel|river rock|rattan ball|shel(f|ves)|racks?)\b',n,re.I): return 'Decor & Accessories'
+    return 'Botanicals'   # containers, jars, wall pockets: plant containers
+def _not_botanical(it,p):
+    n=it['n'].lower(); c=(it['c'] or '').lower()
+    if re.search(r'fabric|swatch|trim',c+' '+n): return 'Decor & Accessories'
+    for src in (n,c):
+        for tt,rx in RX:
+            if tt!='Botanicals' and rx.search(src): return tt
+    if it['v'] in VENDOR_DEFAULT and VENDOR_DEFAULT[it['v']]!='Botanicals': return VENDOR_DEFAULT[it['v']]
+    q=p.copy(); q[TYPES.index('Botanicals')]=-1
+    return TYPES[int(q.argmax())]
 _STRONG={'Tables':r'\btables?\b','Chairs & Seating':r'\bchairs?\b|\brecliner|\bottoman|\bstool|\bbench','Sofas & Sectionals':r'\bsofas?\b|sectional|loveseat',
  'Desks & Office':r'\bdesks?\b','Dressers & Nightstands':r'\bdresser|nightstand|\bchests?\b','Beds':r'\bbeds?\b|headboard','Lighting':r'\blamps?\b|chandelier|pendant|sconce',
  'Rugs':r'\brugs?\b','Mirrors':r'\bmirrors?\b','Cabinets & Shelving':r'bookcase|\bcabinet|etagere','Dining Storage':r'buffet|sideboard|server'}
@@ -139,6 +169,8 @@ for it in items:
     elif TYPE_SURE.get(id(it)) and _p[TYPES.index(t)]<0.03 and _p[_b]>0.75 and t not in ('Outdoor','Rugs','Bedding','Pillows & Throws','Mirrors') \
          and TYPES[_b] in ('Wall Art','Sofas & Sectionals','Chairs & Seating','Tables','Dressers & Nightstands','Cabinets & Shelving') \
          and not (t=='Wall Art'): t=TYPES[_b]; _fix+=1
+    if it['v']=='dw-silks': t=_dw_type(it)   # a faux-plant vendor: plants, florals and their containers
+    elif t=='Botanicals' and not _botanical_ok(it,_p): t=_not_botanical(it,_p)
     if t!=_old: _FIXLOG.append((it['v'],it['n'][:50],_old,t))
     nm=it['n']; nm=nm.title() if nm.isupper() and len(nm)>4 else nm
     cc=[x.strip() for x in re.split(r'>|/',it['c']) if x.strip() and not re.search(r'\bin ?stock\b|quick ?ship|express ship|\bsale\b|^new\b',x.strip(),re.I)]; cc=cc[-1] if cc else ''; cc=cc.title() if cc.isupper() else cc
