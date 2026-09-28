@@ -49,7 +49,7 @@ jobs:
             mkdir -p extra && tar -xzf state/extra.tar.gz -C extra
             chmod -R u+rwX data extra 2>/dev/null || true
             [ -d extra/data ] && cp -rf --remove-destination extra/data/. data/
-            [ -f extra/delta.sqlite ] && python - <<'PY'
+            if [ -f extra/delta.sqlite ]; then python - <<'PY'
           import sqlite3
           c = sqlite3.connect('embed/emb_cache.sqlite')
           c.execute('create table if not exists e(url text primary key, v blob, ok int)')
@@ -60,7 +60,9 @@ jobs:
               except Exception as ex: print('skip', t, ex)
           c.commit(); print('merged extras:', [c.execute(f'select count(*) from {t}').fetchone()[0] for t in ('e', 'c')])
           PY
+            fi
           fi
+          true
       - name: Scrape vendors
         if: ${{ github.event.inputs.skip_scrape != 'true' }}
         run: python scraper/run_all.py ${{ github.event.inputs.vendors }}
