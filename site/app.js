@@ -143,11 +143,8 @@ async function packSheet(obj) {
 $('#sheetBoard').onclick = async () => {
   const b = active(); if (!b.items.length) { toast('Save a few pieces to this board first.'); return; }
   const w = window.open('', '_blank');   // open right away so pop-up blockers allow it
-  let me = {}; try { me = JSON.parse(localStorage.getItem('sof-designer') || '{}'); } catch {}
-  const it = b.items.map((x) => { const o = { n: custName(x), d: x.d || '', i: x.i }; if ((+x.qty || 1) > 1) o.q = +x.qty; if (x.note) o.o = x.note; return o; });
-  const sig = it.map((x) => x.i || x.n).join('|').length + ':' + it.map((x) => (x.n || '').slice(0, 6)).join('');
-  try { localStorage.setItem('sof-sheet-int', JSON.stringify({ sig, items: b.items.map((x) => ({ v: x.v, s: x.s, u: x.u })) })); } catch {}
-  const url = new URL('sheet.html', location.href).href + '#d=' + await packSheet({ b: b.name, t: Date.now(), dz: me.dz || '', st: me.st || '', ph: me.ph || '', it });
+  const it = b.items.map((x) => { const o = { n: x.n, d: x.d || '', i: x.i, v: x.v, s: x.s, u: x.u }; if ((+x.qty || 1) > 1) o.q = +x.qty; if (x.note) o.o = x.note; return o; });
+  const url = new URL('sheet.html', location.href).href + '#d=' + await packSheet({ b: b.name, t: Date.now(), it });
   if (w) w.location = url; else location.href = url;
 };
 
