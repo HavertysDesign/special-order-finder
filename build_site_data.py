@@ -84,6 +84,8 @@ def dims_of(it,t):
     for s_ in src:
         d=pdims(s_)
         if d: break
+    if t=='Rugs' and not rs and d.get('W') and d.get('D') and max(d['W'],d['D'])>=24:
+        a_,b_=sorted((int(round(d['W'])),int(round(d['D'])))); rs=[(a_,b_)]
     if not d and t!='Rugs':
         w=from_name(it['n'])
         if w: d={'W':w}

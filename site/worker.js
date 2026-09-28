@@ -194,7 +194,7 @@ async function search({ q, image, likeId, filters, limit }) {
     seenImg.add(META.i[i]); seenName.add(key);
     out.push(i); if (out.length >= limit) break;
   }
-  const items = out.map(i => ({ id: i, n: META.n[i], i: META.i[i], u: META.u[i], v: VENDORS[META.v[i]], c: META.c[i], d: META.d[i], s: META.s[i], score: score[i] }));
+  const items = out.map(i => ({ id: i, n: META.n[i], i: META.i[i], u: META.u[i], v: VENDORS[META.v[i]], c: META.c[i], d: META.d[i], s: META.s[i], ty: TYPES[META.t[i]], score: score[i] }));
   post('results', { items, total: idx.length, ms: Math.round(performance.now() - t0), note, dims: hasDims ? describeDims(dq) : '', noSize });
 }
 
@@ -309,7 +309,7 @@ async function roomMatch({ box, typeName, filters, limit }) {
   idx.sort((a, b) => s[b] - s[a]);
   const out = [], seenImg = new Set(), seenName = new Set();
   for (const i of idx) { const k = META.v[i] + '|' + NAMELC[i]; if (seenImg.has(META.i[i]) || seenName.has(k)) continue; seenImg.add(META.i[i]); seenName.add(k); out.push(i); if (out.length >= (limit || 12)) break; }
-  post('roomRow', { id: box.id, typeName: TYPES[ti], title: (DET_LABELS[box.label] === TYPES[ti] ? box.label : null), debug: box.debug, items: out.map(i => ({ id: i, n: META.n[i], i: META.i[i], u: META.u[i], v: VENDORS[META.v[i]], c: META.c[i], d: META.d[i], s: META.s[i] })) });
+  post('roomRow', { id: box.id, typeName: TYPES[ti], title: (DET_LABELS[box.label] === TYPES[ti] ? box.label : null), debug: box.debug, items: out.map(i => ({ id: i, n: META.n[i], i: META.i[i], u: META.u[i], v: VENDORS[META.v[i]], c: META.c[i], d: META.d[i], s: META.s[i], ty: TYPES[META.t[i]] })) });
 }
 
 self.onmessage = async (e) => {

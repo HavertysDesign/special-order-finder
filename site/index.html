@@ -22,9 +22,14 @@
   <a class="logo" href="./">SOF<b>Special Order Finder</b></a>
   <div class="navlinks">
     <a href="#" id="browseLink" class="hide-sm">Shop by Type</a>
+    <button id="custBtn" class="custbtn" aria-pressed="false" title="Hide vendor names, item numbers and vendor links so you can show the screen to a customer">
+      <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 5c-5 0-9 4.5-10 7 1 2.5 5 7 10 7s9-4.5 10-7c-1-2.5-5-7-10-7Zm0 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8Zm0-2a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/></svg>
+      <span class="custlabel">Customer view</span>
+    </button>
     <button id="boardBtn" class="pill" aria-label="Saved pieces">♥ <span id="boardCount">0</span></button>
   </div>
 </nav>
+<div class="custbanner" role="status">Customer view is on: vendor names, item numbers and vendor links are hidden.</div>
 
 <div class="wrap">
   <section class="banner" id="dropZone">
@@ -62,7 +67,7 @@
 
   <div class="filters">
     <div id="typeChips" class="chips" aria-label="Type"></div>
-    <label class="sel">Vendor
+    <label class="sel vendor">Vendor
       <select id="vendorSel"><option value="">All vendors</option></select>
     </label>
     <label class="sel narrow">Max width (in)

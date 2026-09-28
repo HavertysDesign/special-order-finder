@@ -170,3 +170,13 @@ button,input,select{font:inherit;color:inherit}
 .dlgactions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
 .dlgactions .btn{text-decoration:none;display:inline-block}
 .dlg .sel{max-width:none}
+
+/* customer view */
+.navlinks .custbtn{display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(255,255,255,.45);border-radius:999px;padding:4px 12px;font-size:14px}
+.navlinks .custbtn[aria-pressed="true"]{background:var(--sage);border-color:var(--sage)}
+@media (max-width:640px){.custlabel{display:none}}
+body.cust .nav{background:var(--forest)}
+body.cust .custbanner{display:block}
+.custbanner{display:none;background:var(--sage);color:#fff;text-align:center;font-size:13px;padding:5px 12px}
+body.cust .card .vendor, body.cust .card .actions .link, body.cust .sel.vendor, body.cust .bitem small .vd, body.cust .foot{display:none}
+body.cust .imgwrap{cursor:default}

@@ -2,6 +2,38 @@ const $ = (s) => document.querySelector(s);
 const worker = new Worker('worker.js', { type: 'module' });
 const state = { q: '', image: null, likeId: null, likeItem: null, types: new Set(), vendor: '', maxW: null, limit: 60, lastItems: [], catalogReady: false, textReady: false, visionReady: false };
 let VENDORS = [], TYPES = [];
+// ---------- customer view ----------
+const CKEY = 'sof-customer-view';
+state.cust = (() => { try { return localStorage.getItem(CKEY) === '1'; } catch { return false; } })();
+const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+function custName(it) {
+  // piece name a customer can see: no vendor names or item numbers
+  let n = ' ' + (it.n || '') + ' ';
+  const brands = ['Coastal Living Home Collection', 'Miranda Kerr Home', 'Special Order', 'Havertys'].concat(VENDORS);
+  for (const v of brands) n = n.replace(new RegExp('(^|[\\s(\\-|–])' + esc(v.replace(/\s*\(.*\)\s*/, '')) + '(?=[\\s)\\-|–,]|$)', 'ig'), ' ');
+  for (const v of VENDORS) {
+    const core = v.replace(/\s*\(.*\)\s*/, '').replace(/\s*(&\s*Company|Rugs|Furniture|Furnishings|Home|Company|Collection|Art Group|Group)$/i, '');
+    if (core.length > 3) n = n.replace(new RegExp('(^|\\s)' + esc(core) + '(?=\\s|$)', 'ig'), ' ');
+  }
+  n = n.replace(/\b(?=[A-Z0-9-]*\d)(?=[A-Z0-9-]*[A-Z])[A-Z0-9]{1,8}(?:[-_/][A-Z0-9]{1,8})+\b/g, ' ')   // ARHI-001, 104-BR-QSB
+       .replace(/\b\d{3,}(?:-\d+)+\b/g, ' ')                                                  // 7514-60
+       .replace(/\b[A-Z]{1,5}\d{3,}[A-Z0-9]*\b/g, ' ')                                        // CVPDA124B, U533676
+       .replace(/\b\d{4,}[A-Z]*\b/g, ' ')                                                     // 10007
+       .replace(/\s*[-|–]\s*$/g, '').replace(/\s{2,}/g, ' ').replace(/^[\s\-|–,:]+|[\s\-|–,:]+$/g, '');
+  if (n === n.toUpperCase()) n = n.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+  const kind = (it.ty || 'Piece').replace(/ &.*$/, '').replace(/s$/, '');
+  const words = n.split(/\s+/).filter((w) => /[a-z]{2}/i.test(w));
+  if (!words.length) return kind;
+  if (words.length === 1 && !n.toLowerCase().includes(kind.toLowerCase())) return n + ' ' + kind;
+  return n;
+}
+function setCust(on) {
+  state.cust = on; try { localStorage.setItem(CKEY, on ? '1' : '0'); } catch {}
+  document.body.classList.toggle('cust', on); $('#custBtn').setAttribute('aria-pressed', on);
+  if (on && state.vendor !== '') { state.vendor = ''; $('#vendorSel').value = ''; }
+  document.querySelectorAll('.card').forEach((c) => { if (c._it) c.replaceWith(card(c._it)); });
+  renderBoard();
+}
 
 const EXAMPLES = ['curved boucle swivel chair', 'round travertine coffee table', 'navy and rust vintage-style rug', 'rattan pendant light', 'abstract art in blush and gold', 'channel-tufted velvet bed', 'olive tree in planter'];
 let TYPEIMG = [], TCOUNTS = [];
@@ -14,7 +46,7 @@ let board = loadBoard();
 const inBoard = (u) => board.some((x) => x.u === u);
 function toggleSave(it, btn) {
   if (inBoard(it.u)) board = board.filter((x) => x.u !== it.u);
-  else board.unshift({ n: it.n, u: it.u, i: it.i, v: it.v, d: it.d, s: it.s });
+  else board.unshift({ n: it.n, u: it.u, i: it.i, v: it.v, d: it.d, s: it.s, c: it.c, ty: it.ty });
   saveBoard(board);
   if (btn) { btn.setAttribute('aria-pressed', inBoard(it.u)); btn.textContent = inBoard(it.u) ? '♥' : '♡'; }
 }
@@ -25,20 +57,24 @@ function renderBoard() {
   for (const it of board) {
     const row = document.createElement('div'); row.className = 'bitem';
     const img = document.createElement('img'); img.src = it.i; img.alt = '';
-    const a = document.createElement('a'); a.href = it.u; a.target = '_blank'; a.rel = 'noopener';
-    a.textContent = it.n; const sm = document.createElement('small'); sm.textContent = [it.v, it.s, it.d].filter(Boolean).join(' · '); a.appendChild(sm);
+    const a = document.createElement(state.cust ? 'span' : 'a'); a.className = 'bname';
+    if (!state.cust) { a.href = it.u; a.target = '_blank'; a.rel = 'noopener'; }
+    a.textContent = state.cust ? custName(it) : it.n; const sm = document.createElement('small');
+    sm.textContent = (state.cust ? [it.d] : [it.v, it.s, it.d]).filter(Boolean).join(' · '); a.appendChild(sm);
     const x = document.createElement('button'); x.textContent = '✕'; x.setAttribute('aria-label', 'Remove');
     x.onclick = () => { board = board.filter((b) => b.u !== it.u); saveBoard(board); syncSaveButtons(); };
     row.append(img, a, x); L.appendChild(row);
   }
 }
 function syncSaveButtons() { document.querySelectorAll('.card').forEach((c) => { const b = c.querySelector('.save'); const u = c.dataset.u; b.setAttribute('aria-pressed', inBoard(u)); b.textContent = inBoard(u) ? '♥' : '♡'; }); }
+$('#custBtn').onclick = () => setCust(!state.cust);
+document.body.classList.toggle('cust', state.cust); $('#custBtn').setAttribute('aria-pressed', state.cust);
 $('#boardBtn').onclick = () => { $('#board').hidden = false; };
 $('#closeBoard').onclick = () => { $('#board').hidden = true; };
 $('#clearBoard').onclick = () => { if (confirmClear()) { board = []; saveBoard(board); syncSaveButtons(); } };
 function confirmClear() { const b = $('#clearBoard'); if (b.dataset.armed) { delete b.dataset.armed; b.textContent = 'Clear'; return true; } b.dataset.armed = 1; b.textContent = 'Tap again to clear'; setTimeout(() => { delete b.dataset.armed; b.textContent = 'Clear'; }, 3000); return false; }
 $('#copyBoard').onclick = async () => {
-  const txt = board.map((it) => `${it.n} — ${it.v}${it.s ? ' (' + it.s + ')' : ''}${it.d ? ' — ' + it.d : ''}\n${it.u}`).join('\n\n');
+  const txt = board.map((it) => state.cust ? `${custName(it)}${it.d ? ' — ' + it.d : ''}` : `${it.n} — ${it.v}${it.s ? ' (' + it.s + ')' : ''}${it.d ? ' — ' + it.d : ''}\n${it.u}`).join(state.cust ? '\n' : '\n\n');
   try { await navigator.clipboard.writeText(txt); $('#copyBoard').textContent = 'Copied!'; } catch { $('#copyBoard').textContent = 'Copy failed'; }
   setTimeout(() => ($('#copyBoard').textContent = 'Copy list'), 1800);
 };
@@ -61,14 +97,16 @@ function renderTypes() {
 
 function card(it) {
   const n = $('#cardTpl').content.firstElementChild.cloneNode(true);
-  n.dataset.u = it.u;
-  n.querySelector('.imgwrap').href = it.u;
-  const img = n.querySelector('img'); img.src = it.i; img.alt = it.n; img.referrerPolicy = 'no-referrer';
+  n.dataset.u = it.u; n._it = it;
+  const shownName = state.cust ? custName(it) : it.n;
+  if (state.cust) { n.querySelector('.imgwrap').removeAttribute('href'); n.querySelector('.link').remove(); }
+  else n.querySelector('.imgwrap').href = it.u;
+  const img = n.querySelector('img'); img.src = it.i; img.alt = shownName; img.referrerPolicy = 'no-referrer';
   img.onerror = () => { img.style.opacity = .15; };
   n.querySelector('.vendor').textContent = it.v;
-  n.querySelector('.name').textContent = it.n;
-  n.querySelector('.meta').textContent = [it.d, it.c].filter(Boolean).join(' · ');
-  n.querySelector('.link').href = it.u;
+  n.querySelector('.name').textContent = shownName;
+  n.querySelector('.meta').textContent = state.cust ? (it.d || '') : [it.d, it.c].filter(Boolean).join(' · ');
+  if (!state.cust) n.querySelector('.link').href = it.u;
   const sv = n.querySelector('.save'); sv.setAttribute('aria-pressed', inBoard(it.u)); sv.textContent = inBoard(it.u) ? '♥' : '♡';
   sv.onclick = () => toggleSave(it, sv);
   n.querySelector('.similar').onclick = () => {
@@ -100,7 +138,7 @@ function run() {
   if (state.image && !state.visionReady) setStatus('Loading photo AI (first time only)…');
   else setStatus('Searching…');
   worker.postMessage({ type: 'search', q, image: state.image, likeId: state.likeId, limit: state.limit,
-    filters: { types: [...state.types], vendors: state.vendor === '' ? [] : [Number(state.vendor)], maxW: state.maxW } });
+    filters: { types: [...state.types], vendors: state.vendor === '' || state.cust ? [] : [Number(state.vendor)], maxW: state.maxW } });
 }
 
 worker.onmessage = (e) => {
@@ -113,6 +151,7 @@ worker.onmessage = (e) => {
     const sel = $('#vendorSel');
     VENDORS.map((v, i) => [v, i]).sort((a, b) => a[0].localeCompare(b[0])).forEach(([v, i]) => { const o = document.createElement('option'); o.value = i; o.textContent = `${v} (${(m.vcounts[i] || 0).toLocaleString()})`; sel.appendChild(o); });
     renderTypes();
+    if (state.cust) setCust(true);
     worker.postMessage({ type: 'warm', which: 'text' });
     if (pending) { pending = false; run(); }
   } else if (m.type === 'progress') { if (running || room.busy || !state.textReady) progressStatus(m.label, m.pct); }
