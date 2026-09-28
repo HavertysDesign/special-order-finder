@@ -27,3 +27,4 @@ scraper/t*.py
 state/
 embed/hfcache/
 test_*.py
+site/models/

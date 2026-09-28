@@ -1,10 +1,10 @@
 // Catalog files are versioned (?v=...) so they can be cached for good; everything else is network-first.
-const C="sof-v17";
+const C="sof-v18";
 self.addEventListener('install',e=>self.skipWaiting());
 self.addEventListener('activate',e=>e.waitUntil((async()=>{for(const k of await caches.keys()) if(k!==C) await caches.delete(k); await self.clients.claim();})()));
 self.addEventListener('fetch',e=>{
   const u=new URL(e.request.url);
-  if(u.origin!==location.origin||e.request.method!=='GET')return;
+  if(u.origin!==location.origin||e.request.method!=='GET'||u.pathname.includes('/models/'))return; // AI models: the model library keeps its own cache
   if(u.pathname.includes('/data/')&&u.searchParams.has('v')){
     e.respondWith(caches.open(C).then(async c=>{const hit=await c.match(e.request); if(hit) return hit;
       const r=await fetch(e.request); if(r.ok){ // drop older versions of the same file

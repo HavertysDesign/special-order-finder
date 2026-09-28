@@ -103,6 +103,8 @@ jobs:
           gh release upload catalog-state state/data.tar.gz state/emb_cache.sqlite --clobber
           # only drop the one-time extras once they've made it into a finished build
           [ -f state/extra.tar.gz ] && [ -f site/data/meta.json ] && gh release delete-asset catalog-state extra.tar.gz -y || true
+      - name: Put the in-browser AI models on the site (works where huggingface.co is blocked)
+        run: ./site_models.sh
       - uses: actions/upload-pages-artifact@v3
         with: { path: site }
       - id: deploy

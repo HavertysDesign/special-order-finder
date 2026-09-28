@@ -1,6 +1,16 @@
 // Search worker: loads catalog + embeddings, runs CLIP (MobileCLIP-S0) models in-browser.
 import { env, pipeline, AutoTokenizer, CLIPTextModelWithProjection, AutoProcessor, CLIPVisionModelWithProjection, RawImage } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.1';
 env.allowLocalModels = false;
+// AI model files are served from this site (models/…), so a browser or network that blocks huggingface.co still works.
+// If the site copy is missing, fall back to huggingface.co.
+const SITE_MODELS = new URL('./models/', self.location.href).href;
+function useSiteModels() { env.remoteHost = SITE_MODELS; env.remotePathTemplate = '{model}/'; }
+function useHF() { env.remoteHost = 'https://huggingface.co/'; env.remotePathTemplate = '{model}/resolve/{revision}/'; }
+useSiteModels();
+async function fromModels(fn) {
+  try { return await retry(fn, 2); }
+  catch (e) { if (env.remoteHost !== SITE_MODELS) throw e; useHF(); try { return await retry(fn, 2); } finally { useSiteModels(); } }
+}
 const MODEL = 'Xenova/mobileclip_s0';
 let QS = null, COL = null, META = null, EMB = null, DIM = 0, N = 0, PCA = null, TXT = null, NAMELC = null, VENDORS = [], TYPES = [];
 let tok, textModel, proc, visionModel, textReady = null, visionReady = null;
@@ -15,7 +25,7 @@ const getOk = (url, opt) => fetch(url, opt).then(r => { if (!r.ok) throw new Err
 class Friendly extends Error {}
 let TEXTERR = '';
 function aiError(what, e) {
-  return new Friendly(`Couldn't download the ${what} (it comes from huggingface.co). Check your internet connection and try again. If you're on a work network, it may be blocking that site. (${e && e.message || e})`);
+  return new Friendly(`Couldn't download the ${what}. Check your internet connection and try again. (${e && e.message || e})`);
 }
 
 async function loadCatalog() {
@@ -87,16 +97,16 @@ function progressCb(label) {
 }
 function loadText() {
   if (!textReady) textReady = (async () => {
-    tok = await retry(() => AutoTokenizer.from_pretrained(MODEL));
-    textModel = await retry(() => CLIPTextModelWithProjection.from_pretrained(MODEL, { dtype: 'q8', progress_callback: progressCb('Loading text AI') }));
+    tok = await fromModels(() => AutoTokenizer.from_pretrained(MODEL));
+    textModel = await fromModels(() => CLIPTextModelWithProjection.from_pretrained(MODEL, { dtype: 'q8', progress_callback: progressCb('Loading text AI') }));
     TEXTERR = ''; post('ready', { which: 'text' });
   })().catch((e) => { textReady = null; textModel = null; const f = aiError('search AI', e); TEXTERR = f.message; throw f; });
   return textReady;
 }
 function loadVision() {
   if (!visionReady) visionReady = (async () => {
-    proc = await retry(() => AutoProcessor.from_pretrained(MODEL));
-    visionModel = await retry(() => CLIPVisionModelWithProjection.from_pretrained(MODEL, { dtype: 'fp16', progress_callback: progressCb('Loading photo AI') }));
+    proc = await fromModels(() => AutoProcessor.from_pretrained(MODEL));
+    visionModel = await fromModels(() => CLIPVisionModelWithProjection.from_pretrained(MODEL, { dtype: 'fp16', progress_callback: progressCb('Loading photo AI') }));
     post('ready', { which: 'vision' });
   })().catch((e) => { visionReady = null; visionModel = null; throw aiError('photo AI', e); });
   return visionReady;
@@ -384,7 +394,7 @@ async function typeEmbeddings() {
 }
 function loadDetector() {
   if (!detReady) detReady = (async () => {
-    detector = await retry(() => pipeline('zero-shot-object-detection', 'Xenova/owlvit-base-patch32', { dtype: 'q8', progress_callback: progressCb('Loading room AI') }));
+    detector = await fromModels(() => pipeline('zero-shot-object-detection', 'Xenova/owlvit-base-patch32', { dtype: 'q8', progress_callback: progressCb('Loading room AI') }));
     post('ready', { which: 'detector' });
   })().catch((e) => { detReady = null; detector = null; throw aiError('room AI', e); });
   return detReady;
