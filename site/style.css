@@ -153,3 +153,20 @@ button,input,select{font:inherit;color:inherit}
 .rrscroll .actions .link{font-size:0}.rrscroll .actions .link::after{content:"Open ↗";font-size:13px}
 .rrwait{color:var(--muted);font-size:14px;padding:18px 0}
 .rrhead select{max-width:55%}
+
+/* refresh dialog */
+.linkbtn{background:none;border:0;padding:0;color:var(--steel);text-decoration:underline;cursor:pointer;font-size:13px}
+.dlg{border:0;padding:0;width:min(520px,calc(100% - 32px));background:var(--surface);color:var(--text);box-shadow:0 20px 60px rgba(0,0,0,.35)}
+.dlg::backdrop{background:rgba(20,24,28,.55)}
+.dlghead{display:flex;justify-content:space-between;align-items:center;background:var(--nav);color:#fff;padding:0 16px;height:52px;margin:0}
+.dlghead h2{margin:0;font:400 22px var(--serif)}
+.dlghead button{background:none;border:0;color:#fff;font-size:18px;cursor:pointer}
+.dlgbody{padding:16px}
+.dlgbody p{margin:0 0 12px}
+.small{font-size:13px;color:var(--muted)}
+.runstat{padding:10px 12px;background:var(--soft);border-left:4px solid var(--sage);margin-bottom:14px;font-size:14px}
+.runstat.bad{border-left-color:var(--clay)}
+.runstat.busy{border-left-color:var(--wheat)}
+.dlgactions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.dlgactions .btn{text-decoration:none;display:inline-block}
+.dlg .sel{max-width:none}

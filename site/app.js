@@ -257,4 +257,42 @@ $('#roomPhoto').onchange = (e) => { startRoom(e.target.files[0]); e.target.value
   });
 })();
 
+// ---------- Refresh catalog (runs the GitHub refresh workflow) ----------
+const GH = 'https://api.github.com/repos/HavertysDesign/special-order-finder';
+const TKEY = 'sof-gh-refresh-key';
+const getKey = () => { try { return localStorage.getItem(TKEY) || ''; } catch { return ''; } };
+const setKey = (k) => { try { k ? localStorage.setItem(TKEY, k) : localStorage.removeItem(TKEY); } catch {} };
+let pollTimer = null;
+function ago(t) { const m = Math.round((Date.now() - new Date(t)) / 60000); return m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} hr ago` : `${Math.round(m / 1440)} days ago`; }
+async function loadRunStatus() {
+  const el = $('#runStat');
+  try {
+    const r = await fetch(GH + '/actions/workflows/refresh.yml/runs?per_page=1', { headers: getKey() ? { Authorization: 'Bearer ' + getKey() } : {} });
+    const run = (await r.json()).workflow_runs?.[0];
+    if (!run) { el.textContent = 'No refresh has run yet.'; return null; }
+    el.className = 'runstat';
+    if (run.status !== 'completed') { el.classList.add('busy'); el.innerHTML = `<b>Refresh in progress</b>, started ${ago(run.run_started_at || run.created_at)}. The site updates when it finishes.`; }
+    else if (run.conclusion === 'success') el.innerHTML = `Last refresh finished <b>${ago(run.updated_at)}</b>.`;
+    else { el.classList.add('bad'); el.innerHTML = `Last refresh (${ago(run.updated_at)}) did not finish. <a href="${run.html_url}" target="_blank" rel="noopener">See details ↗</a>`; }
+    return run;
+  } catch { el.textContent = "Couldn't check refresh status right now."; return null; }
+}
+function showKeyUI() { const k = !!getKey(); $('#tokenArea').hidden = k; $('#runArea').hidden = !k; }
+$('#refreshOpen').onclick = async () => {
+  $('#runMsg').textContent = ''; showKeyUI(); $('#refreshDlg').showModal();
+  const run = await loadRunStatus(); $('#runNow').disabled = !!(run && run.status !== 'completed');
+  clearInterval(pollTimer); pollTimer = setInterval(async () => { if (!$('#refreshDlg').open) return clearInterval(pollTimer); const r = await loadRunStatus(); $('#runNow').disabled = !!(r && r.status !== 'completed'); }, 30000);
+};
+$('#tokenSave').onclick = () => { const k = $('#tokenIn').value.trim(); if (!k) return; setKey(k); $('#tokenIn').value = ''; showKeyUI(); $('#runMsg').textContent = 'Key saved on this device.'; };
+$('#tokenForget').onclick = () => { setKey(''); showKeyUI(); $('#runMsg').textContent = 'Key removed from this device.'; };
+$('#runNow').onclick = async () => {
+  const b = $('#runNow'); b.disabled = true; $('#runMsg').textContent = 'Starting…';
+  try {
+    const r = await fetch(GH + '/actions/workflows/refresh.yml/dispatches', { method: 'POST', headers: { Authorization: 'Bearer ' + getKey(), Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' }, body: JSON.stringify({ ref: 'main' }) });
+    if (r.status === 204) { $('#runMsg').textContent = 'Refresh started. Check back in a couple of hours; you can close this.'; setTimeout(loadRunStatus, 6000); }
+    else if (r.status === 401 || r.status === 403 || r.status === 404) { $('#runMsg').textContent = "GitHub didn't accept the key. It may have expired. Forget it and paste a new one."; b.disabled = false; }
+    else { $('#runMsg').textContent = `GitHub said ${r.status}. Try again in a minute.`; b.disabled = false; }
+  } catch { $('#runMsg').textContent = "Couldn't reach GitHub. Check your connection."; b.disabled = false; }
+};
+
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});

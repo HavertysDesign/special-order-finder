@@ -96,7 +96,7 @@
     <div class="tiles" id="tiles"></div>
   </section>
 
-  <footer class="foot">Results link to each vendor's own site, which is the source of truth for pricing, availability and specs. <span id="updated"></span></footer>
+  <footer class="foot">Results link to each vendor's own site, which is the source of truth for pricing, availability and specs. <span id="updated"></span> <button type="button" class="linkbtn" id="refreshOpen">Refresh catalog</button></footer>
 </div>
 
 <aside id="board" class="board" hidden aria-label="Saved pieces">
@@ -110,6 +110,25 @@
     <button class="btn" id="clearBoard">Clear</button>
   </div>
 </aside>
+
+<dialog id="refreshDlg" class="dlg" aria-labelledby="refreshTitle">
+  <form method="dialog" class="dlghead"><h2 id="refreshTitle">Refresh Catalog</h2><button aria-label="Close">✕</button></form>
+  <div class="dlgbody">
+    <p>Re-checks every vendor for new and discontinued products, then republishes the site. It takes about 2–3 hours. Searches keep working the whole time.</p>
+    <div class="runstat" id="runStat">Checking the last refresh…</div>
+    <div id="tokenArea" hidden>
+      <p class="small">To start a refresh from here, this device needs your GitHub refresh key (a one-time setup per device, stored only in this browser).</p>
+      <label class="sel">GitHub refresh key<input id="tokenIn" type="password" autocomplete="off" placeholder="github_pat_…"></label>
+      <div class="dlgactions"><button type="button" class="btn primary" id="tokenSave">Save key</button>
+      <a class="btn" id="ghLink" target="_blank" rel="noopener" href="https://github.com/HavertysDesign/special-order-finder/actions/workflows/refresh.yml">Run it on GitHub instead ↗</a></div>
+    </div>
+    <div id="runArea" hidden>
+      <div class="dlgactions"><button type="button" class="btn primary" id="runNow">Refresh now</button>
+      <button type="button" class="btn" id="tokenForget">Forget key on this device</button></div>
+    </div>
+    <p class="small" id="runMsg" role="status" aria-live="polite"></p>
+  </div>
+</dialog>
 
 <template id="cardTpl">
   <article class="card">

@@ -58,6 +58,18 @@ jobs:
         run: embed/loop.sh "$PWD/catalog_full.json" "$PWD/embed/emb_cache.sqlite"
       - name: Build site data
         run: python build_site_data.py
+      - name: Log this refresh (also keeps GitHub's weekly schedule switched on)
+        continue-on-error: true
+        run: |
+          python - <<'PY'
+          import json, datetime
+          m = json.load(open('site/data/meta.json'))
+          log = {'refreshed': datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC'), 'total': len(m['n']),
+                 'by_vendor': dict(sorted(zip(m['vendors'], m['vcounts'])))}
+          json.dump(log, open('refresh-log.json', 'w'), indent=1)
+          PY
+          git config user.name "catalog-refresh-bot"; git config user.email "actions@users.noreply.github.com"
+          git add refresh-log.json && git commit -m "Catalog refresh $(date -u +%F)" && git push || echo "nothing to commit"
       - name: Save state for next run
         if: always()
         run: |
