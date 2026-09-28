@@ -247,7 +247,7 @@ worker.onmessage = (e) => {
     if (state.cust) setCust(true);
     worker.postMessage({ type: 'warm', which: 'text' });
     if (pending) { pending = false; run(); }
-  } else if (m.type === 'progress') { if (running || room.busy || (!state.textReady && !$('#results').children.length)) progressStatus(m.label, m.pct); }
+  } else if (m.type === 'progress') { if (running || room.busy || (!state.textReady && !$('#results').children.length && !state.lastMsg)) progressStatus(m.label, m.pct); }
   else if (m.type === 'ready') {
     if (m.which === 'text') { state.textReady = true; if ($('#q').value.trim() && /keyword|nomodel/.test(state.lastNote || '')) run(); else if (!running) setStatus(state.lastMsg || ''); }
     if (m.which === 'vision') state.visionReady = true;
@@ -344,30 +344,74 @@ $('#maxW').onchange = (e) => { const v = parseFloat(e.target.value); state.maxW 
 $('#moreBtn').onclick = () => { state.limit += 60; run(); };
 
 // photo input
-function setPhoto(file) {
-  if (!file || !file.type.startsWith('image/')) return;
-  state.image = file; state.imageKey++; state.likeId = null; $('#likeChip').hidden = true; state.refine.clear();
-  $('#photoThumb').src = URL.createObjectURL(file); $('#photoChip').hidden = false;
+const IMG_EXT = /\.(jpe?g|jfif|png|webp|gif|bmp|avif|heic|heif|tiff?)$/i;
+function photoProblem(msg) { state.lastMsg = escHtml(msg); setStatus(state.lastMsg); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+// Decode here (so a bad file gets a clear message) and shrink big phone photos before searching.
+async function readPhoto(file, M = 1024) {
+  let bmp;
+  try { bmp = await createImageBitmap(file); }
+  catch {
+    if (/heic|heif/i.test(file.type) || /\.hei[cf]$/i.test(file.name || '')) throw new Error("This is an iPhone HEIC photo, which this browser can't open. On the iPhone, set Settings > Camera > Formats to Most Compatible, or take a screenshot of the photo and use that.");
+    throw new Error("Couldn't read that file as a photo. Try a JPG or PNG, or take a screenshot of it and paste that (Ctrl+V).");
+  }
+  const sc = Math.min(1, M / Math.max(bmp.width, bmp.height));
+  const cv = document.createElement('canvas'); cv.width = Math.round(bmp.width * sc); cv.height = Math.round(bmp.height * sc);
+  const cx = cv.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0, 0, cv.width, cv.height); cx.drawImage(bmp, 0, 0, cv.width, cv.height);
+  return await new Promise((res) => cv.toBlob(res, 'image/jpeg', 0.92));
+}
+async function setPhoto(file) {
+  if (!file) return;
+  if (!(file.type || '').startsWith('image/') && !IMG_EXT.test(file.name || '')) { photoProblem("That file isn't a photo. Use a JPG, PNG or screenshot."); return; }
+  let blob;
+  try { blob = await readPhoto(file); } catch (e) { photoProblem(e.message); return; }
+  state.image = blob; state.imageKey++; state.likeId = null; $('#likeChip').hidden = true; state.refine.clear();
+  $('#photoThumb').src = URL.createObjectURL(blob); $('#photoChip').hidden = false;
   worker.postMessage({ type: 'warm', which: 'vision' });
   state.limit = 60; run();
 }
+// An image dragged straight from another website arrives as a link, not a file. Try to fetch it; most sites won't allow that.
+async function photoFromUrl(url) {
+  try { const r = await fetch(url, { mode: 'cors' }); if (!r.ok) throw 0; const b = await r.blob(); if (!b.type.startsWith('image/')) throw 0; await setPhoto(new File([b], 'photo', { type: b.type })); }
+  catch { photoProblem("That website won't let its photos be dragged straight in. Right-click the photo, choose Copy image, then click here and press Ctrl+V. Or save the photo and use the camera button."); }
+}
+function urlFromTransfer(dt) {
+  const html = dt.getData('text/html'); const m = html && html.match(/<img[^>]+src=["']([^"']+)/i);
+  const u = (m && m[1]) || (dt.getData('text/uri-list') || '').split('\n').find((x) => /^https?:/.test(x.trim())) || '';
+  return u.trim();
+}
 function clearPhoto(rerun = true) { state.image = null; $('#photoChip').hidden = true; $('#photo').value = ''; if (rerun) run(); }
-$('#photo').onchange = (e) => setPhoto(e.target.files[0]);
+$('#photo').onchange = (e) => { const f = e.target.files[0]; e.target.value = ''; setPhoto(f); };
 $('#clearPhoto').onclick = () => clearPhoto();
 $('#clearLike').onclick = () => { state.likeId = null; $('#likeChip').hidden = true; run(); };
-document.addEventListener('paste', (e) => { const f = [...(e.clipboardData?.files || [])].find((f) => f.type.startsWith('image/')); if (f) { e.preventDefault(); setPhoto(f); } });
+document.addEventListener('paste', (e) => {
+  const cd = e.clipboardData; if (!cd) return;
+  const f = [...(cd.files || [])].find((f) => (f.type || '').startsWith('image/') || IMG_EXT.test(f.name || ''))
+    || [...(cd.items || [])].filter((i) => i.kind === 'file' && i.type.startsWith('image/')).map((i) => i.getAsFile()).find(Boolean);
+  if (f) { e.preventDefault(); setPhoto(f); return; }
+  const u = urlFromTransfer(cd); // copied from a web page as HTML with an <img>
+  if (u && /<img/i.test(cd.getData('text/html') || '') && !(e.target && e.target.id === 'q')) { e.preventDefault(); photoFromUrl(u); }
+});
 const dz = document.body;
 dz.addEventListener('dragover', (e) => { e.preventDefault(); $('#dropZone').classList.add('drag'); });
 dz.addEventListener('dragleave', (e) => { if (!e.relatedTarget) $('#dropZone').classList.remove('drag'); });
-dz.addEventListener('drop', (e) => { e.preventDefault(); $('#dropZone').classList.remove('drag'); setPhoto(e.dataTransfer.files[0]); });
+dz.addEventListener('drop', (e) => {
+  e.preventDefault(); $('#dropZone').classList.remove('drag');
+  const dt = e.dataTransfer; const f = dt.files && dt.files[0];
+  if (f) { setPhoto(f); return; }
+  const u = urlFromTransfer(dt); if (u) photoFromUrl(u);
+});
 
 
 // ---------- Shop the room ----------
 const room = { boxes: [], W: 0, H: 0, active: null, drawing: false, nextId: 100, busy: false };
 function roomFilters() { return { vendors: state.vendor === '' ? [] : [Number(state.vendor)], maxW: state.maxW, soOnly: state.soOnly, quick: state.quick }; }
-function startRoom(file) {
+async function startRoom(file) {
   $('#complete').hidden = true;
-  if (!file || !file.type.startsWith('image/')) return;
+  if (!file) return;
+  if (!(file instanceof Blob && file.__ok)) {
+    if (!(file.type || '').startsWith('image/') && !IMG_EXT.test(file.name || '')) { photoProblem("That file isn't a photo. Use a JPG, PNG or screenshot."); return; }
+    try { file = await readPhoto(file, 1600); file.__ok = true; } catch (e) { photoProblem(e.message); return; }
+  }
   if (!state.catalogReady) { setStatus('One moment, the catalog is still loading…'); setTimeout(() => startRoom(file), 800); return; }
   $('#room').hidden = false; $('#results').innerHTML = ''; $('#moreBtn').hidden = true; $('#empty').hidden = true;
   $('#roomImg').src = URL.createObjectURL(file); $('#roomBoxes').innerHTML = '';
