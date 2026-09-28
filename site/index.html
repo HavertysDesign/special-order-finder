@@ -70,6 +70,9 @@
     <label class="sel vendor">Vendor
       <select id="vendorSel"><option value="">All vendors</option></select>
     </label>
+    <label class="sotoggle" title="Hide pieces outside Havertys' approved special-order categories for each vendor">
+      <input type="checkbox" id="soOnly" checked> Only what we can special order
+    </label>
     <label class="sel narrow">Max width (in)
       <input id="maxW" type="number" inputmode="numeric" min="1" placeholder="Any">
     </label>
@@ -156,6 +159,7 @@
   <article class="card">
     <a class="imgwrap" target="_blank" rel="noopener"><img loading="lazy" alt=""></a>
     <div class="vendor"></div>
+    <div class="sobadge" hidden></div>
     <h3 class="name"></h3>
     <div class="meta"></div>
     <div class="actions">

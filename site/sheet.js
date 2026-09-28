@@ -23,6 +23,7 @@ function render() {
     const body = document.createElement('div'); body.style.minWidth = '0';
     const sku = it.s && /\d/.test(it.s) && it.s.split(' ').length <= 2 ? it.s : '';
     if (it.v || sku) { const v = document.createElement('div'); v.className = 'vd'; v.textContent = [it.v, sku && '#' + sku].filter(Boolean).join(' · '); body.appendChild(v); }
+    if (it.so === 0 || it.so === 2) { const w = document.createElement('div'); w.className = 'so ' + (it.so === 0 ? 'no' : 'check'); w.textContent = it.so === 0 ? `Not on approved list · ${it.v} approved for: ${it.vr}` : (/price list/i.test(it.vr || '') ? 'Check the price list before ordering' : `Check approved list · ${it.v} approved for: ${it.vr}`); body.appendChild(w); }
     const h = document.createElement('h3'); const num = document.createElement('span'); num.className = 'num'; num.textContent = n + 1;
     h.append(num, document.createTextNode(it.n)); body.appendChild(h);
     if (it.d) { const d = document.createElement('div'); d.className = 'dims'; d.textContent = it.d; body.appendChild(d); }

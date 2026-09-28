@@ -31,23 +31,25 @@ RULES=[
  ('Outdoor',r'\boutdoor\b|\bpatio\b|adirondack|\bporch\b'),
  ('Botanicals',r'\bplants?\b|\btrees?\b|\bfloral\b|\bstems?\b|botanical|\bplanter\b|\bsilk\b|arrangement|\bfaux\b|\bpalm\b|\bfern\b|succulent|\borchid|\bboxwood|\btopiary'),
  ('Sofas & Sectionals',r'\bsofas?\b|sectional|loveseat|\bsettee|\bchaise|\bsleeper|\bchofa'),
- ('Beds',r'\bbeds?\b|headboard|daybed|\bbed frame|\bking\b.*\bbed|\bqueen\b.*\bbed'),
- ('Dressers & Nightstands',r'\bdressers?\b|nightstand|night stand|\bbedside|\bchests?\b|\barmoire|\bbachelor|\blingerie|\bvanity\b'),
- ('Desks & Office',r'\bdesks?\b|\bfile cabinet|\boffice\b|\bwriting table|\bbookcase desk'),
+ ('Beds',r'\bbeds?\b|headboard|footboard|daybed|trundle|\bbed frame|\bhb\b|\bfb\b|\bside rails?\b|\brails\b|\brails? (&|and) slats|\bking\b.*\bbed|\bqueen\b.*\bbed'),
+ ('Dressers & Nightstands',r'\bdressers?\b|\bchessers?\b|nightstand|night stand|\bbedside|\bchests?\b|\barmoire|\bbachelor|\blingerie|\bvanity\b'),
+ ('Desks & Office',r'\bdesks?\b|\bfile\b|\bcredenza desk|\bfile cabinet|\boffice\b|\bwriting table|\bbookcase desk'),
  ('Dining Storage',r'\bbuffet|sideboard|\bserver\b|\bhutch|\bchina\b|\bbar cabinet|\bwine\b'),
- ('Cabinets & Shelving',r'\bcabinets?\b|bookcase|etagere|\bmedia\b|entertainment|credenza|\bshel(f|ves)|\bconsole cabinet|\bstorage\b|\bcurio|\bdisplay\b'),
+ ('Cabinets & Shelving',r'\bcabinets?\b|\bkitchen island|\bfireplace|\bpier\b|\bbridge\b|bookcase|etagere|\bmedia\b|entertainment|credenza|\bshel(f|ves)|\bconsole cabinet|\bstorage\b|\bcurio|\bdisplay\b'),
  ('Chairs & Seating',r'\bchairs?\b|recliner|\bstools?\b|\bbench(es)?\b|\bottomans?\b|\bpoufs?\b|glider|rocker|\bseating\b|\bswivel'),
  ('Tables',r'\btables?\b|\bconsoles?\b|\bcocktail\b|\bend table|\bside table|\bpedestal\b|\bnesting'),
  ('Decor & Accessories',r'\bvases?\b|\bbowls?\b|sculpture|\bbox(es)?\b|\bobjects?\b|\btrays?\b|\bclocks?\b|\bcandle|\bdecor\b|accessor|\bbaskets?\b|bookend|\bfigur|\bjars?\b|\bplatter|\bstatue|\borb\b|\bfinial|\bscreen\b|\blantern'),
 ]
 VENDOR_DEFAULT={'wendover':'Wall Art','left-bank':'Wall Art','dalyn':'Rugs','karastan':'Rugs','kas-rugs':'Rugs','oriental-weavers':'Rugs','dw-silks':'Botanicals','sopoly':'Outdoor','amity-home':'Bedding','ann-gish':'Bedding','crestview':'Lighting','stylecraft':'Lighting','paragon':'Wall Art','harp-finial':'Wall Art','cooper-classics':'Mirrors','wesley-allen':'Beds','artistic-leathers':'Sofas & Sectionals','best-home-furnishings':'Sofas & Sectionals'}
 RX=[(t,re.compile(r,re.I)) for t,r in RULES]
+TYPE_SURE={}
 def typ(it):
     n=it['n'].lower(); c=it['c'].lower()
     for t,rx in RX:
-        if rx.search(n): return t
+        if rx.search(n): TYPE_SURE[id(it)]=True; return t
     for t,rx in RX:
-        if rx.search(c): return t
+        if rx.search(c): TYPE_SURE[id(it)]=True; return t
+    TYPE_SURE[id(it)]=it['v'] in VENDOR_DEFAULT
     return VENDOR_DEFAULT.get(it['v'],'Decor & Accessories')
 def width(d,t):
     if not d or t=='Rugs': return 0
@@ -90,19 +92,22 @@ def dims_of(it,t):
         w=from_name(it['n'])
         if w: d={'W':w}
     return d,rs
-meta={'n':[],'i':[],'u':[],'v':[],'c':[],'d':[],'s':[],'k':[],'t':[],'w':[],'dd':[],'dh':[],'rs':[]}
+from sorules import status as so_status, label as so_label
+meta={'n':[],'i':[],'u':[],'v':[],'c':[],'d':[],'s':[],'k':[],'t':[],'w':[],'dd':[],'dh':[],'rs':[],'so':[]}
 for it in items:
     t=typ(it)
     nm=it['n']; nm=nm.title() if nm.isupper() and len(nm)>4 else nm
     cc=[x.strip() for x in re.split(r'>|/',it['c']) if x.strip()]; cc=cc[-1] if cc else ''; cc=cc.title() if cc.isupper() else cc
     meta['n'].append(nm); meta['i'].append(it['i']); meta['u'].append(it['u']); meta['v'].append(vi[it['v']])
     meta['c'].append(cc[:40]); meta['d'].append(it['d'][:48]); meta['s'].append(it['s'][:24]); meta['k'].append(kw(it)); meta['t'].append(TYPES.index(t))
+    meta['so'].append(so_status(it['v'],it,t,TYPE_SURE.get(id(it),True)))
     dm,rs=dims_of(it,t)
     meta['w'].append(round(dm.get('W',0),1)); meta['dd'].append(round(dm.get('D',0),1)); meta['dh'].append(round(dm.get('H',0),1))
     meta['rs'].append([a for p in rs for a in p] if rs else 0)
     if t=='Rugs' and rs: meta['d'][-1]=', '.join(fmt_rug(a,b) for a,b in rs[:4])+(' +more' if len(rs)>4 else '')
     elif not it['d'] and dm: meta['d'][-1]=' x '.join(f'{dm[k]:g}"{k}' for k in ('W','D','H') if k in dm)
 meta['vendors']=[V[k] for k in vk]; meta['types']=TYPES
+meta['vrules']=[so_label(k) for k in vk]
 # representative image per type: best CLIP match for a plain product-photo prompt
 sys.path.insert(0,'embed')
 from textemb import etext
@@ -122,5 +127,6 @@ import time; json.dump({'v':str(int(time.time()))},open('site/data/version.json'
 json.dump({'dim':D,'mean':[round(float(x),6) for x in mean],'comp':[[round(float(x),6) for x in r] for r in comp]},open('site/data/pca.json','w'),separators=(',',':'))
 from collections import Counter
 print(Counter(TYPES[t] for t in meta['t']).most_common())
+from collections import Counter as _C; print('special-order status', _C(meta['so']))
 hd=sum(1 for i in range(len(meta['n'])) if meta['w'][i] or meta['dd'][i] or meta['dh'][i] or meta['rs'][i]); print('with dims',hd,'of',len(meta['n']))
 print('sizes MB', {f:round(os.path.getsize('site/data/'+f)/1e6,1) for f in os.listdir('site/data')})

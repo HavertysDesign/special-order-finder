@@ -62,7 +62,7 @@ function toast(html) { const t = $('#toast'); t.innerHTML = html; t.hidden = fal
 function toggleSave(it, btn) {
   const b = active();
   if (inBoard(it.u)) { b.items = b.items.filter((x) => x.u !== it.u); toast(`Removed from <b>${escHtml(b.name)}</b>`); }
-  else { b.items.unshift({ n: it.n, u: it.u, i: it.i, v: it.v, d: it.d, s: it.s, c: it.c, ty: it.ty, note: '', qty: 1 }); toast(`Saved to <b>${escHtml(b.name)}</b> · <button type="button" class="linkbtn" onclick="document.getElementById('boardBtn').click()">View</button>`); }
+  else { b.items.unshift({ n: it.n, u: it.u, i: it.i, v: it.v, d: it.d, s: it.s, c: it.c, ty: it.ty, so: it.so, vr: it.vr, note: '', qty: 1 }); toast(`Saved to <b>${escHtml(b.name)}</b> · <button type="button" class="linkbtn" onclick="document.getElementById('boardBtn').click()">View</button>`); }
   b.updated = Date.now(); persist();
   if (btn) { btn.setAttribute('aria-pressed', inBoard(it.u)); btn.textContent = inBoard(it.u) ? '♥' : '♡'; }
 }
@@ -88,6 +88,7 @@ function renderBoard() {
     if (!state.cust) { a.href = it.u; a.target = '_blank'; a.rel = 'noopener'; }
     a.textContent = state.cust ? custName(it) : it.n; const sm = document.createElement('small');
     sm.textContent = (state.cust ? [it.d] : [it.v, it.s, it.d]).filter(Boolean).join(' · '); a.appendChild(sm);
+    if (!state.cust && (it.so === 0 || it.so === 2)) { const bd = document.createElement('span'); bd.className = 'sobadge ' + (it.so === 0 ? 'no' : 'check'); bd.textContent = it.so === 0 ? 'Not on approved list' : (/price list/i.test(it.vr) ? 'Check price list' : 'Check approved list'); bd.title = `${it.v} is approved for: ${it.vr}`; a.appendChild(bd); }
     const opts = document.createElement('div'); opts.className = 'bopts';
     const note = document.createElement('input'); note.className = 'bnote'; note.placeholder = 'Finish, fabric, notes…'; note.value = it.note || ''; note.maxLength = 140; note.setAttribute('aria-label', 'Notes for ' + it.n);
     note.onchange = () => { it.note = note.value.trim(); b.updated = Date.now(); try { localStorage.setItem(BKEY, JSON.stringify(boards)); } catch {} };
@@ -143,7 +144,7 @@ async function packSheet(obj) {
 $('#sheetBoard').onclick = async () => {
   const b = active(); if (!b.items.length) { toast('Save a few pieces to this board first.'); return; }
   const w = window.open('', '_blank');   // open right away so pop-up blockers allow it
-  const it = b.items.map((x) => { const o = { n: x.n, d: x.d || '', i: x.i, v: x.v, s: x.s, u: x.u }; if ((+x.qty || 1) > 1) o.q = +x.qty; if (x.note) o.o = x.note; return o; });
+  const it = b.items.map((x) => { const o = { n: x.n, d: x.d || '', i: x.i, v: x.v, s: x.s, u: x.u }; if (x.so === 0 || x.so === 2) { o.so = x.so; o.vr = x.vr; } if ((+x.qty || 1) > 1) o.q = +x.qty; if (x.note) o.o = x.note; return o; });
   const url = new URL('sheet.html', location.href).href + '#d=' + await packSheet({ b: b.name, t: Date.now(), it });
   if (w) w.location = url; else location.href = url;
 };
@@ -172,6 +173,9 @@ function card(it) {
   const img = n.querySelector('img'); img.src = it.i; img.alt = shownName; img.referrerPolicy = 'no-referrer';
   img.onerror = () => { img.style.opacity = .15; };
   n.querySelector('.vendor').textContent = it.v;
+  const so = n.querySelector('.sobadge');
+  if (it.so === 0) { so.hidden = false; so.className = 'sobadge no'; so.textContent = 'Not on approved list'; so.title = `${it.v} is approved for: ${it.vr}`; }
+  else if (it.so === 2) { so.hidden = false; so.className = 'sobadge check'; so.textContent = /price list/i.test(it.vr) ? 'Check price list' : 'Check approved list'; so.title = `${it.v} is approved for: ${it.vr}`; }
   n.querySelector('.name').textContent = shownName;
   n.querySelector('.meta').textContent = state.cust ? (it.d || '') : [it.d, it.c].filter(Boolean).join(' · ');
   if (!state.cust) n.querySelector('.link').href = it.u;
@@ -206,7 +210,7 @@ function run() {
   if (state.image && !state.visionReady) setStatus('Loading photo AI (first time only)…');
   else setStatus('Searching…');
   worker.postMessage({ type: 'search', q, image: state.image, likeId: state.likeId, limit: state.limit,
-    filters: { types: [...state.types], vendors: state.vendor === '' || state.cust ? [] : [Number(state.vendor)], maxW: state.maxW } });
+    filters: { types: [...state.types], vendors: state.vendor === '' || state.cust ? [] : [Number(state.vendor)], maxW: state.maxW, soOnly: state.soOnly } });
 }
 
 worker.onmessage = (e) => {
@@ -251,6 +255,9 @@ $('#browseLink').onclick = (e) => { e.preventDefault(); $('#q').value = ''; clea
 EXAMPLES.forEach((x) => { const b = document.createElement('button'); b.textContent = x; b.onclick = () => { $('#q').value = x; state.limit = 60; run(); }; $('#examples').appendChild(b); });
 
 $('#searchForm').onsubmit = (e) => { e.preventDefault(); state.limit = 60; $('#q').blur(); run(); };
+state.soOnly = (() => { try { return localStorage.getItem('sof-so-only') !== '0'; } catch { return true; } })();
+$('#soOnly').checked = state.soOnly;
+$('#soOnly').onchange = (e) => { state.soOnly = e.target.checked; try { localStorage.setItem('sof-so-only', state.soOnly ? '1' : '0'); } catch {} run(); };
 $('#vendorSel').onchange = (e) => { state.vendor = e.target.value; run(); };
 $('#maxW').onchange = (e) => { const v = parseFloat(e.target.value); state.maxW = v > 0 ? v : null; run(); };
 $('#moreBtn').onclick = () => { state.limit += 60; run(); };
@@ -276,7 +283,7 @@ dz.addEventListener('drop', (e) => { e.preventDefault(); $('#dropZone').classLis
 
 // ---------- Shop the room ----------
 const room = { boxes: [], W: 0, H: 0, active: null, drawing: false, nextId: 100, busy: false };
-function roomFilters() { return { vendors: state.vendor === '' ? [] : [Number(state.vendor)], maxW: state.maxW }; }
+function roomFilters() { return { vendors: state.vendor === '' ? [] : [Number(state.vendor)], maxW: state.maxW, soOnly: state.soOnly }; }
 function startRoom(file) {
   if (!file || !file.type.startsWith('image/')) return;
   if (!state.catalogReady) { setStatus('One moment, the catalog is still loading…'); setTimeout(() => startRoom(file), 800); return; }

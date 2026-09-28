@@ -203,3 +203,12 @@ body.cust .imgwrap{cursor:default}
 .bqty input{width:52px;border:1px solid var(--line);background:var(--surface);color:var(--text);border-radius:3px;padding:5px 6px;font-size:13px}
 .toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:3px;font-size:14px;z-index:30;box-shadow:0 6px 20px rgba(0,0,0,.25);max-width:calc(100% - 32px)}
 .toast .linkbtn{color:var(--wheat);font-size:14px}
+
+/* special-order approval */
+.sotoggle{display:inline-flex;align-items:center;gap:8px;font-size:14px;color:var(--text);padding:9px 12px;border:1px solid var(--line);border-radius:3px;background:var(--surface);cursor:pointer;white-space:nowrap}
+.sotoggle input{width:16px;height:16px;accent-color:var(--sage)}
+.sobadge{display:inline-block;margin-top:4px;font-size:11px;font-weight:700;padding:2px 7px;border-radius:2px;text-transform:uppercase;letter-spacing:.04em;cursor:help;align-self:flex-start}
+.sobadge.no{background:#f7e3dd;color:#8a3b22}
+.sobadge.check{background:#fbf0de;color:#7a5413}
+body.cust .sobadge{display:none!important}
+.bbody .sobadge{display:table;margin-top:4px}

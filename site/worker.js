@@ -179,6 +179,7 @@ async function search({ q, image, likeId, filters, limit }) {
     if (score[i] <= -1) continue;
     if (vset && !vset.has(META.v[i])) continue;
     if (tset && !tset.has(META.t[i])) continue;
+    if (f.soOnly && META.so && META.so[i] === 0) continue;
     if (hasDims) { const fd = fitsDims(i, dq); if (fd <= 0) { if (fd === 0 && score[i] > 0.2) noSize++; continue; } }
     if (f.maxW && META.w[i] && META.w[i] > f.maxW) continue;
     if (f.maxW && f.strictDims && !META.w[i]) continue;
@@ -194,7 +195,7 @@ async function search({ q, image, likeId, filters, limit }) {
     seenImg.add(META.i[i]); seenName.add(key);
     out.push(i); if (out.length >= limit) break;
   }
-  const items = out.map(i => ({ id: i, n: META.n[i], i: META.i[i], u: META.u[i], v: VENDORS[META.v[i]], c: META.c[i], d: META.d[i], s: META.s[i], ty: TYPES[META.t[i]], score: score[i] }));
+  const items = out.map(i => ({ id: i, n: META.n[i], i: META.i[i], u: META.u[i], v: VENDORS[META.v[i]], c: META.c[i], d: META.d[i], s: META.s[i], ty: TYPES[META.t[i]], so: META.so ? META.so[i] : 1, vr: META.vrules ? META.vrules[META.v[i]] : '', score: score[i] }));
   post('results', { items, total: idx.length, ms: Math.round(performance.now() - t0), note, dims: hasDims ? describeDims(dq) : '', noSize });
 }
 
@@ -303,13 +304,14 @@ async function roomMatch({ box, typeName, filters, limit }) {
   for (let i = 0; i < N; i++) {
     if (META.t[i] !== ti) continue;
     if (vset && !vset.has(META.v[i])) continue;
+    if (f.soOnly && META.so && META.so[i] === 0) continue;
     if (f.maxW && META.w[i] && META.w[i] > f.maxW) continue;
     idx.push(i);
   }
   idx.sort((a, b) => s[b] - s[a]);
   const out = [], seenImg = new Set(), seenName = new Set();
   for (const i of idx) { const k = META.v[i] + '|' + NAMELC[i]; if (seenImg.has(META.i[i]) || seenName.has(k)) continue; seenImg.add(META.i[i]); seenName.add(k); out.push(i); if (out.length >= (limit || 12)) break; }
-  post('roomRow', { id: box.id, typeName: TYPES[ti], title: (DET_LABELS[box.label] === TYPES[ti] ? box.label : null), debug: box.debug, items: out.map(i => ({ id: i, n: META.n[i], i: META.i[i], u: META.u[i], v: VENDORS[META.v[i]], c: META.c[i], d: META.d[i], s: META.s[i], ty: TYPES[META.t[i]] })) });
+  post('roomRow', { id: box.id, typeName: TYPES[ti], title: (DET_LABELS[box.label] === TYPES[ti] ? box.label : null), debug: box.debug, items: out.map(i => ({ id: i, n: META.n[i], i: META.i[i], u: META.u[i], v: VENDORS[META.v[i]], c: META.c[i], d: META.d[i], s: META.s[i], ty: TYPES[META.t[i]], so: META.so ? META.so[i] : 1, vr: META.vrules ? META.vrules[META.v[i]] : '' })) });
 }
 
 self.onmessage = async (e) => {
