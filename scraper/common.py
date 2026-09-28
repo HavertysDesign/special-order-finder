@@ -34,6 +34,9 @@ def sitemap_locs(u, depth=0, out=None, idx_filter=None):
 DIM_RE=re.compile(r'(\d+(?:\.\d+)?)\s*(?:"|”|in\.?|inches)?\s*([WDHL])\b\s*[x×X]\s*(\d+(?:\.\d+)?)\s*(?:"|”|in\.?)?\s*([WDHL])\b(?:\s*[x×X]\s*(\d+(?:\.\d+)?)\s*(?:"|”|in\.?)?\s*([WDHL])\b)?')
 DIM_RE2=re.compile(r'\b(Width|Depth|Height|Length|Diameter|W|D|H|Dia)\s*[:\-]?\s*(\d+(?:\.\d+)?)\s*(?:"|”|in\b|inches)?',re.I)
 def find_dims(text):
+    import sys,os; sys.path.insert(0,os.path.join(os.path.dirname(os.path.abspath(__file__)),'..'))
+    from dims import strip_parts
+    text=strip_parts(text)
     m=DIM_RE.search(text)
     if m: return m.group(0).strip()
     parts={}

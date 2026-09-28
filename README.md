@@ -16,3 +16,11 @@ Left Bank and Liberty need trade logins. They're stored as repository **secrets*
 ## Pulaski and Huntington House
 
 These two sites block cloud servers, so the weekly run can't reach them. Their products were collected from a regular computer and are kept as-is by the weekly refresh. Refresh them occasionally by asking Claude to re-run that step from your computer.
+
+## Approved vendor list
+
+What Havertys can special order from each vendor lives in `config/special-order-rules.json`. The easiest way to change it is the **Approved vendor list** page on the site (footer link): check or uncheck boxes and **Save changes**. That needs a GitHub key with *Contents: Read and write* on this repo. Changes show up on the search page within about 5 minutes, with no rebuild needed.
+
+## Color match and quick ship
+- **Color**: each product photo's main colors are read once (background removed) and cached with the photo embeddings. The weekly refresh reads colors for new photos only. Designers pick a preset color, a custom color, or upload a fabric swatch photo and tap the exact spot.
+- **Quick ship only**: uses what vendors publish themselves: Bernhardt "InStock" / "Express Ship" tags, Hooker "In Stock Products", Paragon and Wendover "Quick Ship", and Four Hands' live in-stock flag. Other vendors don't publish stock, so they drop out when this is on.

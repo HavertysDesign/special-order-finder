@@ -8,9 +8,14 @@ def n(m,i):
 IN=r'\s*(?:"|”|“|″|\'\'|in\b\.?|inch(?:es)?\b)?\s*'
 LAB={'w':'W','width':'W','wide':'W','l':'W','length':'W','long':'W','dia':'W','diameter':'W','diam':'W','round':'W','d':'D','depth':'D','deep':'D','h':'H','height':'H','high':'H','tall':'H','ht':'H'}
 LABRE=r'(width|wide|length|long|diameter|diam|dia|depth|deep|height|high|tall|ht|w|l|d|h)\b\.?'
+PARTS=re.compile(r'\b(leg|seat|seat back|back|arm|shelf|shelves|drawer|door|top|bench top|table top|interior|inside|opening|cushion|frame|base|clearance|between \w+|overhang|floor rest)\s+(width|depth|height|thickness|length)\s*[:=]?\s*[\d./ -]+\s*("|”|in\b\.?|inches)?',re.I)
+def strip_parts(t):
+    """part measurements (Leg Width: 2\", Seat Height 18\", Shelf Depth...) are not the piece's size"""
+    return PARTS.sub(' ',t or '')
 def parse(text):
     t=(text or '').replace('\u00a0',' ')
     t=re.sub(r"\d{1,2}\s*'\s*(\d{1,2}\s*(\"|”|''))?",' ',t)   # drop feet measurements (rug sizes)
+    t=strip_parts(t)
     out={}
     def label_first():
         for m in re.finditer(r'\b'+LABRE+r'\s*[:=]?\s*'+NUM,t,re.I):

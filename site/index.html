@@ -71,8 +71,27 @@
       <select id="vendorSel"><option value="">All vendors</option></select>
     </label>
     <label class="sotoggle" title="Hide pieces outside Havertys' approved special-order categories for each vendor">
-      <input type="checkbox" id="soOnly" checked> Only what we can special order
+      <input type="checkbox" id="soOnly" checked> Only what we can special order <a href="rules.html" class="linkbtn" title="See or edit the approved vendor list">(list)</a>
     </label>
+    <label class="sotoggle" id="quickWrap" title="Only pieces the vendor lists as in stock or quick ship">
+      <input type="checkbox" id="quickOnly"> Quick ship only
+    </label>
+    <div class="colorpick" id="colorPick">
+      <button type="button" id="colorBtn" class="colorbtn" aria-expanded="false" aria-controls="colorPop" title="Match a color or a fabric swatch"><span class="dot" id="colorDot"></span><span id="colorLabel">Color</span></button>
+      <button type="button" id="colorClear" class="colorclear" aria-label="Clear color" hidden>✕</button>
+      <div id="colorPop" class="colorpop" hidden>
+        <div class="cphead"><b>Match a color</b><button type="button" id="colorClose" aria-label="Close">✕</button></div>
+        <div class="swatches" id="swatches" role="group" aria-label="Colors"></div>
+        <div class="cprow">
+          <label class="cpcustom">Custom <input type="color" id="colorIn" value="#8d9c84"></label>
+          <label class="btn cpphoto"><input type="file" id="swatchPhoto" accept="image/*" hidden>Swatch photo</label>
+        </div>
+        <div id="swatchWrap" class="swatchwrap" hidden>
+          <canvas id="swatchCanvas" aria-label="Swatch photo. Tap to pick a color"></canvas>
+          <small>Tap the photo to pick the exact color.</small>
+        </div>
+      </div>
+    </div>
     <label class="sel narrow">Max width (in)
       <input id="maxW" type="number" inputmode="numeric" min="1" placeholder="Any">
     </label>
@@ -93,7 +112,17 @@
     </div>
   </section>
 
+  <section id="complete" class="room" hidden aria-label="Complete the room">
+    <div class="roomhead">
+      <h2 class="section-title">Complete the Room</h2>
+      <div class="roomtools"><button type="button" id="closeComplete" class="btn">Close</button></div>
+    </div>
+    <div class="anchor" id="anchor"></div>
+    <div class="roomrows" id="completeRows"></div>
+  </section>
+
   <div id="status" class="status" role="status" aria-live="polite"></div>
+  <div id="refineBar" class="refine" hidden><span class="flabel">Refine</span><div id="refineChips" class="chips"></div></div>
   <section id="results" class="grid" aria-label="Results"></section>
   <div class="more"><button id="moreBtn" class="btn" hidden>Show more</button></div>
 
@@ -104,7 +133,7 @@
     <div class="tiles" id="tiles"></div>
   </section>
 
-  <footer class="foot">Results link to each vendor's own site, which is the source of truth for pricing, availability and specs. <span id="updated"></span> <button type="button" class="linkbtn" id="refreshOpen">Refresh catalog</button></footer>
+  <footer class="foot">Results link to each vendor's own site, which is the source of truth for pricing, availability and specs. <span id="updated"></span> <button type="button" class="linkbtn" id="refreshOpen">Refresh catalog</button> · <a class="linkbtn" href="rules.html">Approved vendor list</a></footer>
 </div>
 
 <aside id="board" class="board" hidden aria-label="Client boards">
@@ -134,6 +163,15 @@
     <button class="btn" id="deleteBoard">Delete board</button>
   </div>
 </aside>
+<div id="cmpTray" class="cmptray" hidden>
+  <div id="cmpThumbs" class="cmpthumbs"></div>
+  <button class="btn primary" id="cmpOpen">Compare</button>
+  <button class="btn" id="cmpClear">Clear</button>
+</div>
+<dialog id="cmpDlg" class="dlg cmpdlg" aria-labelledby="cmpTitle">
+  <form method="dialog" class="dlghead"><h2 id="cmpTitle">Compare</h2><button aria-label="Close">✕</button></form>
+  <div class="cmpbody"><table id="cmpTbl" class="cmptbl"></table></div>
+</dialog>
 <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
 <dialog id="refreshDlg" class="dlg" aria-labelledby="refreshTitle">
@@ -160,11 +198,14 @@
     <a class="imgwrap" target="_blank" rel="noopener"><img loading="lazy" alt=""></a>
     <div class="vendor"></div>
     <div class="sobadge" hidden></div>
+    <div class="qsbadge" hidden title="The vendor lists this as in stock or quick ship. Confirm availability before promising a date.">Quick ship</div>
     <h3 class="name"></h3>
     <div class="meta"></div>
     <div class="actions">
       <a class="link" target="_blank" rel="noopener">View at vendor ↗</a>
-      <button class="similar" title="Find similar pieces">Similar</button>
+      <button class="similar" title="Find similar pieces" aria-label="Find similar pieces">≈</button>
+      <button class="pair" title="Complete the room: rugs, lighting, art and more that go with this" aria-label="Complete the room">✦</button>
+      <button class="cmp" title="Compare side by side" aria-label="Compare">⇄</button>
       <button class="save" aria-label="Save">♡</button>
     </div>
   </article>

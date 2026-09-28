@@ -2,7 +2,7 @@
 import { env, pipeline, AutoTokenizer, CLIPTextModelWithProjection, AutoProcessor, CLIPVisionModelWithProjection, RawImage } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.1';
 env.allowLocalModels = false;
 const MODEL = 'Xenova/mobileclip_s0';
-let META = null, EMB = null, DIM = 0, N = 0, PCA = null, TXT = null, NAMELC = null, VENDORS = [], TYPES = [];
+let QS = null, COL = null, META = null, EMB = null, DIM = 0, N = 0, PCA = null, TXT = null, NAMELC = null, VENDORS = [], TYPES = [];
 let tok, textModel, proc, visionModel, textReady = null, visionReady = null;
 
 const post = (type, data) => self.postMessage({ type, ...data });
@@ -24,7 +24,46 @@ async function loadCatalog() {
     NAMELC[i] = meta.n[i].toLowerCase();
     TXT[i] = (meta.c[i] + ' ' + meta.k[i] + ' ' + meta.s[i] + ' ' + VENDORS[meta.v[i]]).toLowerCase();
   }
-  post('catalog', { n: N, vendors: VENDORS, types: TYPES, updated: meta.updated, vcounts: meta.vcounts, typeImg: meta.typeImg || [], tcounts: meta.tcounts || [] });
+  try { const r = await fetch('data/col.bin?v=' + v); if (r.ok) { const b = new Uint8Array(await r.arrayBuffer()); if (b.length === N * 12) COL = b; } } catch {}
+  QS = new Uint8Array(N); for (const i of meta.qs || []) QS[i] = 1;
+  await loadRules();
+  post('catalog', { qsVendors: [...new Set((meta.qs || []).map(i => VENDORS[meta.v[i]]))].sort(), refine: Object.entries(REFINE).map(([k, r]) => [k, r.label]), n: N, vendors: VENDORS, types: TYPES, updated: meta.updated, vcounts: meta.vcounts, typeImg: meta.typeImg || [], tcounts: meta.tcounts || [] });
+}
+
+
+// ---------- special-order rules (applied here, so edits to the list show up without a rebuild) ----------
+const RULES_URL = 'https://raw.githubusercontent.com/HavertysDesign/special-order-finder/main/config/special-order-rules.json';
+const SOFT = new Set(['Rugs', 'Lighting', 'Wall Art', 'Bedding', 'Mirrors', 'Botanicals']);
+async function loadRules() {
+  let cfg = null;
+  try { const r = await fetch(RULES_URL + '?t=' + Date.now(), { cache: 'no-store' }); if (r.ok) cfg = await r.json(); } catch {}
+  if (!cfg) { try { cfg = await fetch('data/special-order-rules.json?v=' + Date.now()).then(r => r.json()); } catch {} }
+  applyRules(cfg || { groups: {}, vendors: {} });
+}
+function applyRules(cfg) {
+  const G = META.sogroups || [], bit = (g) => 1 << G.indexOf(g);
+  const PILLOW = 1 << 12, STRONG = 1 << 13, SURE = 1 << 14;
+  const vr = [], rule = [];
+  (META.vkeys || []).forEach((k, vi) => {
+    const allow = ((cfg.vendors || {})[k] || null) && cfg.vendors[k].map(x => x === 'lamps' ? 'lighting' : x);
+    rule[vi] = allow ? new Set(allow) : null;
+    vr[vi] = allow ? allow.map(a => (cfg.groups || {})[a] || a).join('; ') : 'Everything (no restrictions listed)';
+  });
+  const so = new Uint8Array(N);
+  for (let i = 0; i < N; i++) {
+    const a = rule[META.v[i]], f = META.sg ? META.sg[i] : 0, t = TYPES[META.t[i]];
+    let s = 1;
+    if (a && !a.has('everything')) {
+      if (a.has('price_list')) s = 2;
+      else if (a.size === 1 && a.has('rugs')) s = (f & PILLOW) ? 0 : 1;
+      else if (a.size === 1 && a.has('outdoor')) s = 1;
+      else if ([...a].every(x => x === 'upholstery' || x === 'upholstered_beds')) s = SOFT.has(t) ? 0 : 1;
+      else if (!a.has('upholstery') && (f & STRONG)) s = 0;
+      else { let m = 0; for (const g of a) if (G.includes(g)) m |= bit(g); s = (f & m) ? 1 : ((f & SURE) ? 0 : 2); }
+    }
+    so[i] = s;
+  }
+  META.so = so; META.vrules = vr;
 }
 
 function progressCb(label) {
@@ -66,7 +105,8 @@ async function embedText(q) {
   const { text_embeds } = await textModel(inputs);
   return project(norm(text_embeds.data));
 }
-async function embedImage(blob) { const bmp = await createImageBitmap(blob); return embedRegion(bmp, 0, 0, bmp.width, bmp.height); }
+let lastImgKey = null, lastImgVec = null;
+async function embedImage(blob, key) { if (key != null && key === lastImgKey && lastImgVec) return lastImgVec; const bmp = await createImageBitmap(blob); const v = await embedRegion(bmp, 0, 0, bmp.width, bmp.height); lastImgKey = key; lastImgVec = v; return v; }
 async function embedRegion(bmp, sx, sy, sw, sh) {
   await loadVision();
   // pad to white square so whole object is kept (matches catalog processing)
@@ -146,7 +186,94 @@ function describeDims(dq) {
   return dq.cons.map(c => `${+c.v.toFixed(2)}"${nm[c.k] ? ' ' + nm[c.k] : ''}`).join(', ');
 }
 
-async function search({ q, image, likeId, filters, limit }) {
+
+// ---------- refine chips: nudge the current results without retyping ----------
+const REFINE = {
+  lighter: { label: 'Lighter', pos: 'a light colored piece of furniture in white, cream and beige', neg: 'a dark colored piece of furniture in black, charcoal and espresso' },
+  darker: { label: 'Darker', pos: 'a dark colored piece of furniture in black, charcoal and espresso', neg: 'a light colored piece of furniture in white, cream and beige' },
+  warmer: { label: 'Warmer tones', pos: 'warm tones like honey wood, rust, terracotta, camel and gold', neg: 'cool tones like gray, blue, silver and white' },
+  cooler: { label: 'Cooler tones', pos: 'cool tones like gray, blue, silver and white', neg: 'warm tones like honey wood, rust, terracotta, camel and gold' },
+  modern: { label: 'More modern', pos: 'a sleek modern contemporary minimalist design', neg: 'a traditional ornate classic design with carved details' },
+  traditional: { label: 'More traditional', pos: 'a traditional classic design with carved and turned details', neg: 'a sleek modern contemporary minimalist design' },
+  rustic: { label: 'More rustic', pos: 'a rustic farmhouse design in reclaimed natural wood', neg: 'a sleek glossy polished modern design' },
+  glam: { label: 'More glam', pos: 'a glamorous luxe design with velvet, mirror, crystal and gold', neg: 'a plain simple casual design' },
+  wood: { label: 'Wood', pos: 'made of natural wood with visible wood grain', neg: 'made of metal, glass or upholstered fabric' },
+  brass: { label: 'Brass / gold', pos: 'with brass and gold metal finish', neg: 'with black iron or chrome metal finish' },
+  black: { label: 'Black metal', pos: 'with black iron metal', neg: 'with brass or gold finish' },
+  stone: { label: 'Marble / stone', pos: 'with marble, travertine or stone', neg: 'made of wood' },
+  velvet: { label: 'Velvet', pos: 'upholstered in plush velvet', neg: 'upholstered in linen', kw: ['velvet'] },
+  leather: { label: 'Leather', pos: 'upholstered in leather', neg: 'upholstered in fabric', kw: ['leather'] },
+  performance: { label: 'Performance fabric', kw: ['performance', 'crypton', 'sunbrella', 'revolution fabric', 'inside out', 'stain resistant', 'stain-resistant', 'livesmart', 'bella-dura'] },
+  outdoor: { label: 'Outdoor', kw: ['outdoor', 'patio', 'all-weather', 'all weather', 'sunbrella'], type: 'Outdoor' },
+};
+const REFDIR = {};
+async function refineDir(k) {
+  if (REFDIR[k]) return REFDIR[k];
+  const r = REFINE[k]; if (!r.pos) return null;
+  const [p, n] = [await embedText(r.pos), await embedText(r.neg)];
+  const d = new Float32Array(DIM); for (let j = 0; j < DIM; j++) d[j] = p[j] - n[j];
+  return (REFDIR[k] = norm(d));
+}
+function zs(arr) { let m = 0; for (const x of arr) m += x; m /= arr.length || 1; let v = 0; for (const x of arr) v += (x - m) ** 2; const s = Math.sqrt(v / (arr.length || 1)) || 1; return arr.map(x => (x - m) / s); }
+async function applyRefine(idx, score, keys) {
+  const cand = idx.slice(0, 600); if (!cand.length) return idx;
+  let total = zs(cand.map(i => score[i]));
+  for (const k of keys) {
+    const r = REFINE[k]; if (!r) continue;
+    let add = new Array(cand.length).fill(0);
+    if (r.pos) {
+      await loadText(); const d = await refineDir(k);
+      add = zs(cand.map(i => { let a = 0; const o = i * DIM; for (let j = 0; j < DIM; j++) a += EMB[o + j] * d[j]; return a; }));
+    }
+    if (r.kw || r.type) {
+      const ti = r.type ? TYPES.indexOf(r.type) : -1;
+      add = add.map((x, c) => { const i = cand[c]; const hit = (ti >= 0 && META.t[i] === ti) || (r.kw || []).some(w => TXT[i].includes(w) || NAMELC[i].includes(w)); return x + (hit ? (r.pos ? 1.2 : 2.5) : 0); });
+    }
+    total = total.map((x, c) => x + add[c]);
+  }
+  const order = cand.map((i, c) => [i, total[c]]).sort((a, b) => b[1] - a[1]).map(x => x[0]);
+  return order;
+}
+
+// ---------- color / swatch match ----------
+// Each photo carries up to 3 dominant colors (Lab + share). Distance is CIEDE2000 (how different two colors
+// look to the eye) with lightness counted half, since studio lighting shifts it; small clusters (legs, trim) pay extra.
+const RAD = Math.PI / 180;
+function de2000(L1, a1, b1, L2, a2, b2) {
+  const C1 = Math.hypot(a1, b1), C2 = Math.hypot(a2, b2), Cb7 = ((C1 + C2) / 2) ** 7, G = 0.5 * (1 - Math.sqrt(Cb7 / (Cb7 + 6103515625)));
+  const a1p = a1 * (1 + G), a2p = a2 * (1 + G), C1p = Math.hypot(a1p, b1), C2p = Math.hypot(a2p, b2);
+  const h1 = (Math.atan2(b1, a1p) / RAD + 360) % 360, h2 = (Math.atan2(b2, a2p) / RAD + 360) % 360;
+  let dh = h2 - h1; if (dh > 180) dh -= 360; else if (dh < -180) dh += 360; if (C1p * C2p === 0) dh = 0;
+  const dL = L2 - L1, dC = C2p - C1p, dH = 2 * Math.sqrt(C1p * C2p) * Math.sin(dh * RAD / 2);
+  const Lb = (L1 + L2) / 2, Cbp = (C1p + C2p) / 2, hs = h1 + h2;
+  const hb = C1p * C2p === 0 ? hs : Math.abs(h1 - h2) <= 180 ? hs / 2 : hs < 360 ? (hs + 360) / 2 : (hs - 360) / 2;
+  const T = 1 - 0.17 * Math.cos((hb - 30) * RAD) + 0.24 * Math.cos(2 * hb * RAD) + 0.32 * Math.cos((3 * hb + 6) * RAD) - 0.2 * Math.cos((4 * hb - 63) * RAD);
+  const SL = 1 + 0.015 * (Lb - 50) ** 2 / Math.sqrt(20 + (Lb - 50) ** 2), SC = 1 + 0.045 * Cbp, SH = 1 + 0.015 * Cbp * T;
+  const Cbp7 = Cbp ** 7, RT = -Math.sin(2 * 30 * Math.exp(-(((hb - 275) / 25) ** 2)) * RAD) * 2 * Math.sqrt(Cbp7 / (Cbp7 + 6103515625));
+  const x = dL / (2 * SL), y = dC / SC, z = dH / SH;
+  return Math.sqrt(x * x + y * y + z * z + RT * y * z);
+}
+function colorDist(i, c) {
+  if (!COL) return 999; const o = i * 12; let best = 999;
+  for (let k = 0; k < 3; k++) {
+    const sh = COL[o + k * 4 + 3] / 255; if (sh < 0.1) continue;
+    const d = de2000(c.L, c.a, c.b, COL[o + k * 4] / 2.55, COL[o + k * 4 + 1] - 128, COL[o + k * 4 + 2] - 128) + 8 * Math.max(0, 0.5 - sh);
+    if (d < best) best = d;
+  }
+  return best;
+}
+function applyColor(idx, score, c, browse) {
+  const cand = browse ? idx : idx.slice(0, 800); if (!cand.length) return idx;
+  const d = cand.map(i => colorDist(i, c));
+  const rel = browse ? cand.map(() => 0) : zs(cand.map(i => score[i]));
+  const t = cand.map((i, k) => [i, rel[k] * 0.8 - d[k] / 2, d[k]]);
+  const near = t.filter(x => x[2] <= 9).sort((a, b) => b[1] - a[1]), far = t.filter(x => x[2] > 9).sort((a, b) => a[2] - b[2]);
+  COLORNEAR = near.length;
+  return near.concat(far).map(x => x[0]);
+}
+let COLORNEAR = 0;
+
+async function search({ q, image, imageKey, likeId, filters, limit, refine, color }) {
   const t0 = performance.now();
   const dq = parseDims(q || ''); const hasDims = !!(dq.rug || dq.cons.length);
   q = hasDims ? dq.rest : q;
@@ -155,14 +282,14 @@ async function search({ q, image, likeId, filters, limit }) {
   if (!qt.length && !image && likeId == null) { // browse: stable shuffle so vendors are mixed
     for (let i = 0; i < N; i++) { let h = (i * 2654435761) >>> 0; h ^= h >>> 15; score[i] = h / 4294967296; }
   }
-  if (image) { const v = await embedImage(image); const s = dotAll(v); for (let i = 0; i < N; i++) score[i] += s[i]; hasVec = true; }
+  if (image) { const v = await embedImage(image, imageKey); const s = dotAll(v); for (let i = 0; i < N; i++) score[i] += s[i]; hasVec = true; }
   if (likeId != null) { const s = dotAll(itemVec(likeId)); for (let i = 0; i < N; i++) score[i] += s[i]; hasVec = true; }
   if (qt.length) {
     let useClip = true;
     if (!textModel) { useClip = false; note = 'keyword'; loadText(); }
     if (useClip) { const v = await embedText(q); const s = dotAll(v); const w = hasVec ? 0.8 : 1.0; for (let i = 0; i < N; i++) score[i] += w * s[i] * (hasVec ? 1 : 1); }
     // keyword boost
-    const scale = useClip || hasVec ? 0.035 : 1;
+    const scale = useClip || hasVec ? 0.02 : 1;
     for (let i = 0; i < N; i++) {
       let k = 0; const nm = NAMELC[i], tx = TXT[i];
       for (const t of qt) { if (nm.includes(t)) k += 2; else if (tx.includes(t)) k += 1; }
@@ -180,23 +307,33 @@ async function search({ q, image, likeId, filters, limit }) {
     if (vset && !vset.has(META.v[i])) continue;
     if (tset && !tset.has(META.t[i])) continue;
     if (f.soOnly && META.so && META.so[i] === 0) continue;
+    if (f.quick && !QS[i]) continue;
     if (hasDims) { const fd = fitsDims(i, dq); if (fd <= 0) { if (fd === 0 && score[i] > 0.2) noSize++; continue; } }
     if (f.maxW && META.w[i] && META.w[i] > f.maxW) continue;
     if (f.maxW && f.strictDims && !META.w[i]) continue;
     idx.push(i);
   }
   idx.sort((a, b) => score[b] - score[a]);
+  let ordered = idx;
+  if (refine && refine.length) ordered = await applyRefine(idx, score, refine);
+  if (color && COL) ordered = applyColor(ordered, score, color, !qt.length && !image && likeId == null);
   // dedupe variants: same image, or same vendor+name
   const out = [], seenImg = new Set(), seenName = new Set();
-  for (const i of idx) {
+  // variety: in the first 30 results, no more than 5 from one vendor (the rest follow after)
+  const perV = {}, later = [];
+  for (const i of ordered) {
     if (likeId != null && i === likeId) continue;
-    const key = META.v[i] + '|' + NAMELC[i];
+    const key = META.v[i] + '|' + NAMELC[i].replace(/[^a-z0-9]/g, '');
     if (seenImg.has(META.i[i]) || seenName.has(key)) continue;
     seenImg.add(META.i[i]); seenName.add(key);
+    if (out.length < 30 && (perV[META.v[i]] || 0) >= 5 && !(vset && vset.size === 1)) { later.push(i); continue; }
+    perV[META.v[i]] = (perV[META.v[i]] || 0) + 1;
     out.push(i); if (out.length >= limit) break;
+    if (out.length === 30) { while (later.length && out.length < limit) out.push(later.shift()); if (out.length >= limit) break; }
   }
-  const items = out.map(i => ({ id: i, n: META.n[i], i: META.i[i], u: META.u[i], v: VENDORS[META.v[i]], c: META.c[i], d: META.d[i], s: META.s[i], ty: TYPES[META.t[i]], so: META.so ? META.so[i] : 1, vr: META.vrules ? META.vrules[META.v[i]] : '', score: score[i] }));
-  post('results', { items, total: idx.length, ms: Math.round(performance.now() - t0), note, dims: hasDims ? describeDims(dq) : '', noSize });
+  while (later.length && out.length < limit) out.push(later.shift());
+  const items = out.map(i => ({ id: i, n: META.n[i], i: META.i[i], u: META.u[i], v: VENDORS[META.v[i]], c: META.c[i], d: META.d[i], s: META.s[i], ty: TYPES[META.t[i]], qs: QS[i], so: META.so ? META.so[i] : 1, vr: META.vrules ? META.vrules[META.v[i]] : '', W: META.w[i], D: META.dd[i], H: META.dh[i], score: score[i] }));
+  post('results', { items, total: idx.length, colorOk: !!COL, colorNear: color && COL ? COLORNEAR : null, ms: Math.round(performance.now() - t0), note, dims: hasDims ? describeDims(dq) : '', noSize });
 }
 
 
@@ -305,13 +442,73 @@ async function roomMatch({ box, typeName, filters, limit }) {
     if (META.t[i] !== ti) continue;
     if (vset && !vset.has(META.v[i])) continue;
     if (f.soOnly && META.so && META.so[i] === 0) continue;
+    if (f.quick && !QS[i]) continue;
     if (f.maxW && META.w[i] && META.w[i] > f.maxW) continue;
     idx.push(i);
   }
   idx.sort((a, b) => s[b] - s[a]);
   const out = [], seenImg = new Set(), seenName = new Set();
   for (const i of idx) { const k = META.v[i] + '|' + NAMELC[i]; if (seenImg.has(META.i[i]) || seenName.has(k)) continue; seenImg.add(META.i[i]); seenName.add(k); out.push(i); if (out.length >= (limit || 12)) break; }
-  post('roomRow', { id: box.id, typeName: TYPES[ti], title: (DET_LABELS[box.label] === TYPES[ti] ? box.label : null), debug: box.debug, items: out.map(i => ({ id: i, n: META.n[i], i: META.i[i], u: META.u[i], v: VENDORS[META.v[i]], c: META.c[i], d: META.d[i], s: META.s[i], ty: TYPES[META.t[i]], so: META.so ? META.so[i] : 1, vr: META.vrules ? META.vrules[META.v[i]] : '' })) });
+  post('roomRow', { id: box.id, typeName: TYPES[ti], title: (DET_LABELS[box.label] === TYPES[ti] ? box.label : null), debug: box.debug, items: out.map(i => ({ id: i, n: META.n[i], i: META.i[i], u: META.u[i], v: VENDORS[META.v[i]], c: META.c[i], d: META.d[i], s: META.s[i], ty: TYPES[META.t[i]], qs: QS[i], so: META.so ? META.so[i] : 1, vr: META.vrules ? META.vrules[META.v[i]] : '', W: META.w[i], D: META.dd[i], H: META.dh[i] })) });
+}
+
+
+// ---------- complete the room: pieces in other categories that share this piece's style and color ----------
+const PAIRS = {
+  'Sofas & Sectionals': ['Rugs', 'Tables', 'Chairs & Seating', 'Lighting', 'Pillows & Throws', 'Wall Art'],
+  'Chairs & Seating': ['Tables', 'Rugs', 'Lighting', 'Pillows & Throws', 'Wall Art', 'Sofas & Sectionals'],
+  'Tables': ['Chairs & Seating', 'Rugs', 'Lighting', 'Sofas & Sectionals', 'Decor & Accessories', 'Wall Art'],
+  'Beds': ['Dressers & Nightstands', 'Bedding', 'Lighting', 'Rugs', 'Mirrors', 'Wall Art'],
+  'Dressers & Nightstands': ['Beds', 'Mirrors', 'Lighting', 'Bedding', 'Rugs', 'Wall Art'],
+  'Dining Storage': ['Tables', 'Chairs & Seating', 'Lighting', 'Mirrors', 'Wall Art', 'Decor & Accessories'],
+  'Cabinets & Shelving': ['Decor & Accessories', 'Lighting', 'Chairs & Seating', 'Rugs', 'Wall Art', 'Botanicals'],
+  'Desks & Office': ['Chairs & Seating', 'Lighting', 'Cabinets & Shelving', 'Rugs', 'Wall Art', 'Decor & Accessories'],
+  'Lighting': ['Tables', 'Sofas & Sectionals', 'Chairs & Seating', 'Rugs', 'Wall Art', 'Decor & Accessories'],
+  'Rugs': ['Sofas & Sectionals', 'Chairs & Seating', 'Tables', 'Pillows & Throws', 'Lighting', 'Wall Art'],
+  'Wall Art': ['Sofas & Sectionals', 'Chairs & Seating', 'Lighting', 'Decor & Accessories', 'Rugs', 'Pillows & Throws'],
+  'Mirrors': ['Dining Storage', 'Tables', 'Lighting', 'Decor & Accessories', 'Dressers & Nightstands', 'Botanicals'],
+  'Pillows & Throws': ['Sofas & Sectionals', 'Chairs & Seating', 'Rugs', 'Bedding', 'Wall Art', 'Lighting'],
+  'Bedding': ['Beds', 'Pillows & Throws', 'Dressers & Nightstands', 'Lighting', 'Rugs', 'Wall Art'],
+  'Decor & Accessories': ['Tables', 'Cabinets & Shelving', 'Lighting', 'Wall Art', 'Botanicals', 'Mirrors'],
+  'Botanicals': ['Decor & Accessories', 'Tables', 'Wall Art', 'Lighting', 'Cabinets & Shelving', 'Rugs'],
+  'Outdoor': ['Outdoor', 'Rugs', 'Lighting', 'Pillows & Throws', 'Botanicals', 'Decor & Accessories'],
+};
+let CENT = null;
+function centroids() {
+  if (CENT) return CENT;
+  CENT = TYPES.map(() => new Float32Array(DIM)); const cnt = new Array(TYPES.length).fill(0);
+  for (let i = 0, o = 0; i < N; i++, o += DIM) { const c = CENT[META.t[i]]; for (let j = 0; j < DIM; j++) c[j] += EMB[o + j] / 127; cnt[META.t[i]]++; }
+  CENT.forEach((c, t) => { for (let j = 0; j < DIM; j++) c[j] /= cnt[t] || 1; });
+  return CENT;
+}
+async function complete({ id, filters, per }) {
+  const C = centroids(), src = META.t[id], v = itemVec(id);
+  const style = new Float32Array(DIM); for (let j = 0; j < DIM; j++) style[j] = v[j] - C[src][j];
+  const sn = norm(style);
+  const f = filters || {}, vset = f.vendors && f.vendors.length ? new Set(f.vendors) : null;
+  const targets = (PAIRS[TYPES[src]] || ['Rugs', 'Lighting', 'Wall Art', 'Decor & Accessories', 'Pillows & Throws', 'Tables']).map(t => TYPES.indexOf(t)).filter(t => t >= 0);
+  const rows = [];
+  for (const tt of targets) {
+    const ct = C[tt], sc = [];
+    for (let i = 0, o = 0; i < N; i++, o += DIM) {
+      if (META.t[i] !== tt || i === id) continue;
+      if (f.soOnly && META.so && META.so[i] === 0) continue;
+      if (f.quick && !QS[i]) continue;
+      if (vset && !vset.has(META.v[i])) continue;
+      let a = 0, b = 0; for (let j = 0; j < DIM; j++) { const x = EMB[o + j] / 127; a += (x - ct[j]) * sn[j]; b += x * v[j]; }
+      sc.push([i, a + 0.35 * b]);
+    }
+    sc.sort((x, y) => y[1] - x[1]);
+    const out = [], seen = new Set(), perV = {};
+    for (const [i] of sc) {
+      const k = META.v[i] + '|' + NAMELC[i].replace(/[^a-z0-9]/g, ''); if (seen.has(k) || seen.has(META.i[i])) continue;
+      if ((perV[META.v[i]] || 0) >= 3) continue;
+      seen.add(k); seen.add(META.i[i]); perV[META.v[i]] = (perV[META.v[i]] || 0) + 1;
+      out.push(i); if (out.length >= (per || 12)) break;
+    }
+    rows.push({ type: TYPES[tt], items: out.map(i => ({ id: i, n: META.n[i], i: META.i[i], u: META.u[i], v: VENDORS[META.v[i]], c: META.c[i], d: META.d[i], s: META.s[i], ty: TYPES[META.t[i]], qs: QS[i], so: META.so ? META.so[i] : 1, vr: META.vrules ? META.vrules[META.v[i]] : '', W: META.w[i], D: META.dd[i], H: META.dh[i] })) });
+  }
+  post('complete', { id, rows });
 }
 
 self.onmessage = async (e) => {
@@ -320,7 +517,9 @@ self.onmessage = async (e) => {
     if (m.type === 'init') await loadCatalog();
     else if (m.type === 'warm') { m.which === 'vision' ? loadVision() : loadText(); }
     else if (m.type === 'search') await search(m);
+    else if (m.type === 'rules') { applyRules(m.cfg); post('rulesApplied', {}); }
     else if (m.type === 'room') await roomDetect(m);
+    else if (m.type === 'complete') await complete(m);
     else if (m.type === 'roomMatch') await roomMatch(m);
   } catch (err) { post('error', { message: String(err && err.message || err) }); }
 };

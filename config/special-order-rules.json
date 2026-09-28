@@ -1,8 +1,8 @@
 {
-  "_about": "What Havertys can special order from each vendor (from the approved vendor list). 'allow' uses the groups defined below. Edit this file to change the rules; the site picks it up on the next refresh.",
+  "_about": "What Havertys can special order from each vendor. Edit it on the site (Approved vendor list page) or here; changes show up on the site within a few minutes.",
   "groups": {
     "accessories": "Decor, wall art, mirrors, clocks, botanicals and other accessories",
-    "lamps": "Table and floor lamps",
+    "lighting": "All lighting: table and floor lamps, chandeliers, pendants, sconces, ceiling fixtures",
     "linens_pillows": "Bedding, pillows and throws",
     "rugs": "Rugs",
     "occasional": "Occasional tables (coffee, end, side, console), accent cabinets, chests, benches, stools and ottomans",
@@ -16,45 +16,143 @@
     "everything": "Everything"
   },
   "vendors": {
-    "amity-home": ["linens_pillows"],
-    "bassett-mirror": ["accessories", "lamps", "occasional", "dining"],
-    "cooper-classics": ["accessories"],
-    "currey": ["accessories", "lamps", "occasional"],
-    "crestview": ["lamps"],
-    "dw-silks": ["accessories"],
-    "dalyn": ["rugs"],
-    "ann-gish": ["linens_pillows"],
-    "global-views": ["accessories", "linens_pillows", "rugs", "lamps", "occasional"],
-    "jamie-young": ["accessories", "lamps"],
-    "karastan": ["rugs"],
-    "kas-rugs": ["rugs"],
-    "left-bank": ["accessories"],
-    "oriental-weavers": ["rugs"],
-    "paragon": ["accessories"],
-    "surya": ["accessories", "linens_pillows", "rugs", "lamps"],
-    "wendover": ["accessories"],
-    "stylecraft": ["accessories", "lamps"],
-    "harp-finial": ["accessories", "lamps"],
-    "aico": ["price_list"],
-    "art-furniture": ["price_list"],
-    "aspenhome": ["casegoods"],
-    "bernhardt": ["casegoods"],
-    "gascho": ["casegoods"],
-    "furniture-classics": ["occasional", "dining", "casegoods"],
-    "hooker": ["casegoods"],
-    "home-trends-design-gql": ["casegoods"],
-    "liberty": ["casegoods"],
-    "magnussen": ["casegoods"],
-    "pulaski": ["casegoods"],
-    "riverside": ["casegoods"],
-    "steve-silver": ["casegoods"],
-    "sopoly": ["outdoor"],
-    "universal": ["casegoods"],
-    "wesley-allen": ["metal_beds_stools"],
-    "artistic-leathers": ["upholstery"],
-    "best-home-furnishings": ["upholstery"],
-    "four-hands": ["everything"],
-    "huntington-house": ["upholstery"],
-    "jonathan-louis": ["upholstery", "upholstered_beds"]
+    "amity-home": [
+      "linens_pillows"
+    ],
+    "bassett-mirror": [
+      "accessories",
+      "lighting",
+      "occasional",
+      "dining"
+    ],
+    "cooper-classics": [
+      "accessories"
+    ],
+    "currey": [
+      "accessories",
+      "lighting",
+      "occasional"
+    ],
+    "crestview": [
+      "lighting"
+    ],
+    "dw-silks": [
+      "accessories"
+    ],
+    "dalyn": [
+      "rugs"
+    ],
+    "ann-gish": [
+      "linens_pillows"
+    ],
+    "global-views": [
+      "accessories",
+      "linens_pillows",
+      "rugs",
+      "lighting",
+      "occasional"
+    ],
+    "jamie-young": [
+      "accessories",
+      "lighting"
+    ],
+    "karastan": [
+      "rugs"
+    ],
+    "kas-rugs": [
+      "rugs"
+    ],
+    "left-bank": [
+      "accessories"
+    ],
+    "oriental-weavers": [
+      "rugs"
+    ],
+    "paragon": [
+      "accessories"
+    ],
+    "surya": [
+      "accessories",
+      "linens_pillows",
+      "rugs",
+      "lighting"
+    ],
+    "wendover": [
+      "accessories"
+    ],
+    "stylecraft": [
+      "accessories",
+      "lighting"
+    ],
+    "harp-finial": [
+      "accessories",
+      "lighting"
+    ],
+    "aico": [
+      "price_list"
+    ],
+    "art-furniture": [
+      "price_list"
+    ],
+    "aspenhome": [
+      "casegoods"
+    ],
+    "bernhardt": [
+      "casegoods"
+    ],
+    "gascho": [
+      "casegoods"
+    ],
+    "furniture-classics": [
+      "occasional",
+      "dining",
+      "casegoods"
+    ],
+    "hooker": [
+      "casegoods"
+    ],
+    "home-trends-design-gql": [
+      "casegoods"
+    ],
+    "liberty": [
+      "casegoods"
+    ],
+    "magnussen": [
+      "casegoods"
+    ],
+    "pulaski": [
+      "casegoods"
+    ],
+    "riverside": [
+      "casegoods"
+    ],
+    "steve-silver": [
+      "casegoods"
+    ],
+    "sopoly": [
+      "outdoor"
+    ],
+    "universal": [
+      "casegoods"
+    ],
+    "wesley-allen": [
+      "metal_beds_stools"
+    ],
+    "artistic-leathers": [
+      "upholstery"
+    ],
+    "best-home-furnishings": [
+      "upholstery"
+    ],
+    "four-hands": [
+      "everything"
+    ],
+    "huntington-house": [
+      "upholstery"
+    ],
+    "jonathan-louis": [
+      "upholstery",
+      "upholstered_beds"
+    ]
   }
 }

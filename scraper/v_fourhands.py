@@ -13,7 +13,8 @@ for qq in ['','sofa','chair','table','bed','light','lamp','rug','art','mirror','
           a=p.get('additionalFields') or {}
           cat=(p.get('ec_category') or [''])[-1].replace('|',' > ')
           items[p.get('permanentid') or p.get('ec_product_id')]={'url':(p.get('clickUri') or '').replace('product://','https://fourhands.com/product/'),'name':clean(p.get('ec_name') or '').title(),'image':a.get('imageprimary') or (p.get('ec_thumbnails') or [''])[0],
-            'sku':p.get('permanentid'),'desc':clean(p.get('ec_description') or '')[:500],'category':cat,'dims':find_dims(clean(p.get('ec_description') or '')),'finish':a.get('skuname'),'material':a.get('material')}
+            'sku':p.get('permanentid'),'desc':clean(p.get('ec_description') or '')[:500],'category':cat,'dims':find_dims(clean(p.get('ec_description') or '')),'finish':a.get('skuname'),'material':a.get('material'),
+            'tags':(['In Stock'] if (p.get('ec_in_stock') or (a.get('instock') or 0)>0 or (a.get('inventoryquantity') or 0)>0) else [])+(['Performance fabric'] if str(a.get('hasperformancefabric')).lower()=='true' else [])}
       pg=j.get('pagination',{}); pass
       page+=1
       if page>=pg.get('totalPages',0): break

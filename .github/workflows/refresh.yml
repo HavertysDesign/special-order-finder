@@ -44,6 +44,22 @@ jobs:
           gh release download catalog-state -D state -p '*' || echo "no previous state"
           [ -f state/data.tar.gz ] && tar -xzf state/data.tar.gz || true
           [ -f state/emb_cache.sqlite ] && cp state/emb_cache.sqlite embed/emb_cache.sqlite || true
+          # one-time extras prepared off-GitHub (e.g. a color backfill): merge, then they're removed after the save below
+          if [ -f state/extra.tar.gz ]; then
+            mkdir -p extra && tar -xzf state/extra.tar.gz -C extra
+            [ -d extra/data ] && cp -r extra/data/. data/
+            [ -f extra/delta.sqlite ] && python - <<'PY'
+          import sqlite3
+          c = sqlite3.connect('embed/emb_cache.sqlite')
+          c.execute('create table if not exists e(url text primary key, v blob, ok int)')
+          c.execute('create table if not exists c(url text primary key, c blob)')
+          c.execute("attach 'extra/delta.sqlite' as d")
+          for t in ('e', 'c'):
+              try: c.execute(f'insert or replace into {t} select * from d.{t}')
+              except Exception as ex: print('skip', t, ex)
+          c.commit(); print('merged extras:', [c.execute(f'select count(*) from {t}').fetchone()[0] for t in ('e', 'c')])
+          PY
+          fi
       - name: Scrape vendors
         if: ${{ github.event.inputs.skip_scrape != 'true' }}
         run: python scraper/run_all.py ${{ github.event.inputs.vendors }}
@@ -56,6 +72,11 @@ jobs:
         run: python build_catalog.py
       - name: Embed new product photos
         run: embed/loop.sh "$PWD/catalog_full.json" "$PWD/embed/emb_cache.sqlite"
+      - name: Read product colors for new photos (color / swatch match)
+        continue-on-error: true
+        timeout-minutes: 75
+        env: { COLOR_MINUTES: '60', WORKERS: '32' }
+        run: python embed/run_colors.py "$PWD/catalog_full.json" "$PWD/embed/emb_cache.sqlite"
       - name: Build site data
         run: python build_site_data.py
       - name: Log this refresh (also keeps GitHub's weekly schedule switched on)
@@ -77,6 +98,7 @@ jobs:
           cp embed/emb_cache.sqlite state/emb_cache.sqlite || true
           gh release view catalog-state >/dev/null 2>&1 || gh release create catalog-state --title "Catalog state (internal)" --notes "Scraped data and embedding cache used by the weekly refresh."
           gh release upload catalog-state state/data.tar.gz state/emb_cache.sqlite --clobber
+          [ -f state/extra.tar.gz ] && gh release delete-asset catalog-state extra.tar.gz -y || true
       - uses: actions/upload-pages-artifact@v3
         with: { path: site }
       - id: deploy
