@@ -69,7 +69,9 @@ def kw(it):
 from dims import parse as pdims, rug_sizes, from_name
 import glob
 DIMMAP={}
-for f in glob.glob('data/dims-*.json'): DIMMAP.update(json.load(open(f)))
+for f in glob.glob('data/dims-*.json'):
+    try: DIMMAP.update(json.load(open(f)))
+    except Exception as e: print('skipping unreadable',f,e)
 def ft(x): return f"{x//12}'" + (f'{x%12}"' if x%12 else '')
 def fmt_rug(a,b): return f'{ft(a)} x {ft(b)}'
 def dims_of(it,t):
