@@ -47,7 +47,8 @@ jobs:
           # one-time extras prepared off-GitHub (e.g. a color backfill): merge, then they're removed after the save below
           if [ -f state/extra.tar.gz ]; then
             mkdir -p extra && tar -xzf state/extra.tar.gz -C extra
-            [ -d extra/data ] && cp -r extra/data/. data/
+            chmod -R u+rwX data extra 2>/dev/null || true
+            [ -d extra/data ] && cp -rf --remove-destination extra/data/. data/
             [ -f extra/delta.sqlite ] && python - <<'PY'
           import sqlite3
           c = sqlite3.connect('embed/emb_cache.sqlite')
@@ -98,7 +99,8 @@ jobs:
           cp embed/emb_cache.sqlite state/emb_cache.sqlite || true
           gh release view catalog-state >/dev/null 2>&1 || gh release create catalog-state --title "Catalog state (internal)" --notes "Scraped data and embedding cache used by the weekly refresh."
           gh release upload catalog-state state/data.tar.gz state/emb_cache.sqlite --clobber
-          [ -f state/extra.tar.gz ] && gh release delete-asset catalog-state extra.tar.gz -y || true
+          # only drop the one-time extras once they've made it into a finished build
+          [ -f state/extra.tar.gz ] && [ -f site/data/meta.json ] && gh release delete-asset catalog-state extra.tar.gz -y || true
       - uses: actions/upload-pages-artifact@v3
         with: { path: site }
       - id: deploy
