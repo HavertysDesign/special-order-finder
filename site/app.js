@@ -217,7 +217,8 @@ function render(items, total, ms, note) {
   if (state.refine.size) msg += ` · refined: <b>${REFINES.filter(([k]) => state.refine.has(k)).map(([, l]) => l.toLowerCase()).join(' + ')}</b>`;
   renderRefine(items.length > 0 || state.refine.size > 0);
   if (note === 'keyword' && !state.textReady) msg += ' · keyword matches while the smart search loads…';
-  setStatus(msg);
+  if (note === 'nomodel') msg += ' · <b>keyword matches only.</b> ' + escHtml(state.noteMsg || '') + ' Search again to retry.';
+  state.lastMsg = msg; setStatus(msg);
 }
 
 let pending = false, running = false;
@@ -246,18 +247,23 @@ worker.onmessage = (e) => {
     if (state.cust) setCust(true);
     worker.postMessage({ type: 'warm', which: 'text' });
     if (pending) { pending = false; run(); }
-  } else if (m.type === 'progress') { if (running || room.busy || !state.textReady) progressStatus(m.label, m.pct); }
+  } else if (m.type === 'progress') { if (running || room.busy || (!state.textReady && !$('#results').children.length)) progressStatus(m.label, m.pct); }
   else if (m.type === 'ready') {
-    if (m.which === 'text') { state.textReady = true; if ($('#q').value.trim() && state.lastNote === 'keyword') run(); else if (!running) setStatus(''); }
+    if (m.which === 'text') { state.textReady = true; if ($('#q').value.trim() && /keyword|nomodel/.test(state.lastNote || '')) run(); else if (!running) setStatus(state.lastMsg || ''); }
     if (m.which === 'vision') state.visionReady = true;
   } else if (m.type === 'results') {
-    running = false; state.lastNote = m.note; state.lastDims = m.dims; state.colorNear = m.colorNear; render(m.items, m.total, m.ms, m.note);
+    running = false; state.lastNote = m.note; state.lastDims = m.dims; state.colorNear = m.colorNear; state.noteMsg = m.noteMsg; render(m.items, m.total, m.ms, m.note);
     if (pending) { pending = false; run(); }
   } else if (m.type === 'roomBoxes') { onRoomBoxes(m); setStatus(''); }
   else if (m.type === 'roomRow') { onRoomRow(m); }
   else if (m.type === 'complete') { onComplete(m); }
   else if (m.type === 'roomStage') { if (m.text) setStatus(m.text); else { room.busy = false; setStatus(''); } }
-  else if (m.type === 'error') { running = false; room.busy = false; setStatus('Something went wrong: ' + m.message); }
+  else if (m.type === 'error') {
+    running = false; room.busy = false; pending = false;
+    const msg = /^Couldn't/.test(m.message) ? m.message : `Something went wrong (${m.message}).`;
+    setStatus(escHtml(msg) + ' <button type="button" class="linkbtn" id="retryBtn">Try again</button> · <button type="button" class="linkbtn" onclick="location.reload()">Reload page</button>');
+    const rb = document.getElementById('retryBtn'); if (rb) rb.onclick = () => { if (!state.catalogReady) worker.postMessage({ type: 'init' }); else run(); };
+  }
 };
 worker.postMessage({ type: 'init' });
 

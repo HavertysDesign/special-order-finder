@@ -6,15 +6,26 @@ let QS = null, COL = null, META = null, EMB = null, DIM = 0, N = 0, PCA = null, 
 let tok, textModel, proc, visionModel, textReady = null, visionReady = null;
 
 const post = (type, data) => self.postMessage({ type, ...data });
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+// Network blips (or a site update landing mid-load) shouldn't break the page: retry, then explain.
+async function retry(fn, tries = 3) {
+  for (let k = 1; ; k++) { try { return await fn(); } catch (e) { if (k >= tries) throw e; await sleep(1500 * k); } }
+}
+const getOk = (url, opt) => fetch(url, opt).then(r => { if (!r.ok) throw new Error(`${r.status} for ${url.split('?')[0]}`); return r; });
+class Friendly extends Error {}
+let TEXTERR = '';
+function aiError(what, e) {
+  return new Friendly(`Couldn't download the ${what} (it comes from huggingface.co). Check your internet connection and try again. If you're on a work network, it may be blocking that site. (${e && e.message || e})`);
+}
 
 async function loadCatalog() {
   let v = '0';
   try { v = (await fetch('data/version.json', { cache: 'no-store' }).then(r => r.json())).v; } catch {}
   const [meta, pca, buf] = await Promise.all([
-    fetch('data/meta.json?v=' + v).then(r => r.json()),
-    fetch('data/pca.json?v=' + v).then(r => r.json()),
-    fetch('data/emb.bin?v=' + v).then(r => r.arrayBuffer()),
-  ]);
+    retry(() => getOk('data/meta.json?v=' + v).then(r => r.json())),
+    retry(() => getOk('data/pca.json?v=' + v).then(r => r.json())),
+    retry(() => getOk('data/emb.bin?v=' + v).then(r => r.arrayBuffer())),
+  ]).catch((e) => { throw new Friendly(`Couldn't load the catalog. Check your internet connection and reload the page. (${e.message})`); });
   META = meta; PCA = pca; DIM = pca.dim; N = meta.n.length;
   EMB = new Int8Array(buf);
   VENDORS = meta.vendors; TYPES = meta.types;
@@ -76,18 +87,18 @@ function progressCb(label) {
 }
 function loadText() {
   if (!textReady) textReady = (async () => {
-    tok = await AutoTokenizer.from_pretrained(MODEL);
-    textModel = await CLIPTextModelWithProjection.from_pretrained(MODEL, { dtype: 'q8', progress_callback: progressCb('Loading text AI') });
-    post('ready', { which: 'text' });
-  })();
+    tok = await retry(() => AutoTokenizer.from_pretrained(MODEL));
+    textModel = await retry(() => CLIPTextModelWithProjection.from_pretrained(MODEL, { dtype: 'q8', progress_callback: progressCb('Loading text AI') }));
+    TEXTERR = ''; post('ready', { which: 'text' });
+  })().catch((e) => { textReady = null; textModel = null; const f = aiError('search AI', e); TEXTERR = f.message; throw f; });
   return textReady;
 }
 function loadVision() {
   if (!visionReady) visionReady = (async () => {
-    proc = await AutoProcessor.from_pretrained(MODEL);
-    visionModel = await CLIPVisionModelWithProjection.from_pretrained(MODEL, { dtype: 'fp16', progress_callback: progressCb('Loading photo AI') });
+    proc = await retry(() => AutoProcessor.from_pretrained(MODEL));
+    visionModel = await retry(() => CLIPVisionModelWithProjection.from_pretrained(MODEL, { dtype: 'fp16', progress_callback: progressCb('Loading photo AI') }));
     post('ready', { which: 'vision' });
-  })();
+  })().catch((e) => { visionReady = null; visionModel = null; throw aiError('photo AI', e); });
   return visionReady;
 }
 
@@ -286,7 +297,7 @@ async function search({ q, image, imageKey, likeId, filters, limit, refine, colo
   if (likeId != null) { const s = dotAll(itemVec(likeId)); for (let i = 0; i < N; i++) score[i] += s[i]; hasVec = true; }
   if (qt.length) {
     let useClip = true;
-    if (!textModel) { useClip = false; note = 'keyword'; loadText(); }
+    if (!textModel) { useClip = false; note = TEXTERR ? 'nomodel' : 'keyword'; loadText().catch(() => {}); }
     if (useClip) { const v = await embedText(q); const s = dotAll(v); const w = hasVec ? 0.8 : 1.0; for (let i = 0; i < N; i++) score[i] += w * s[i] * (hasVec ? 1 : 1); }
     // keyword boost
     const scale = useClip || hasVec ? 0.02 : 1;
@@ -333,7 +344,7 @@ async function search({ q, image, imageKey, likeId, filters, limit, refine, colo
   }
   while (later.length && out.length < limit) out.push(later.shift());
   const items = out.map(i => ({ id: i, n: META.n[i], i: META.i[i], u: META.u[i], v: VENDORS[META.v[i]], c: META.c[i], d: META.d[i], s: META.s[i], ty: TYPES[META.t[i]], qs: QS[i], so: META.so ? META.so[i] : 1, vr: META.vrules ? META.vrules[META.v[i]] : '', W: META.w[i], D: META.dd[i], H: META.dh[i], score: score[i] }));
-  post('results', { items, total: idx.length, colorOk: !!COL, colorNear: color && COL ? COLORNEAR : null, ms: Math.round(performance.now() - t0), note, dims: hasDims ? describeDims(dq) : '', noSize });
+  post('results', { noteMsg: TEXTERR, items, total: idx.length, colorOk: !!COL, colorNear: color && COL ? COLORNEAR : null, ms: Math.round(performance.now() - t0), note, dims: hasDims ? describeDims(dq) : '', noSize });
 }
 
 
@@ -373,9 +384,9 @@ async function typeEmbeddings() {
 }
 function loadDetector() {
   if (!detReady) detReady = (async () => {
-    detector = await pipeline('zero-shot-object-detection', 'Xenova/owlvit-base-patch32', { dtype: 'q8', progress_callback: progressCb('Loading room AI') });
+    detector = await retry(() => pipeline('zero-shot-object-detection', 'Xenova/owlvit-base-patch32', { dtype: 'q8', progress_callback: progressCb('Loading room AI') }));
     post('ready', { which: 'detector' });
-  })();
+  })().catch((e) => { detReady = null; detector = null; throw aiError('room AI', e); });
   return detReady;
 }
 function iou(a, b) {
@@ -515,7 +526,7 @@ self.onmessage = async (e) => {
   const m = e.data;
   try {
     if (m.type === 'init') await loadCatalog();
-    else if (m.type === 'warm') { m.which === 'vision' ? loadVision() : loadText(); }
+    else if (m.type === 'warm') { (m.which === 'vision' ? loadVision() : loadText()).catch(() => {}); }
     else if (m.type === 'search') await search(m);
     else if (m.type === 'rules') { applyRules(m.cfg); post('rulesApplied', {}); }
     else if (m.type === 'room') await roomDetect(m);
