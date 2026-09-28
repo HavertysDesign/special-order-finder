@@ -38,43 +38,97 @@ function setCust(on) {
 const EXAMPLES = ['curved boucle swivel chair', 'round travertine coffee table', 'navy and rust vintage-style rug', 'rattan pendant light', 'abstract art in blush and gold', 'channel-tufted velvet bed', 'olive tree in planter'];
 let TYPEIMG = [], TCOUNTS = [];
 
-// ---------- saved board (per-browser) ----------
-const BKEY = 'sof-board-v1';
-function loadBoard() { try { return JSON.parse(localStorage.getItem(BKEY) || '[]'); } catch { return []; } }
-function saveBoard(b) { try { localStorage.setItem(BKEY, JSON.stringify(b)); } catch {} renderBoard(); }
-let board = loadBoard();
-const inBoard = (u) => board.some((x) => x.u === u);
+// ---------- client boards (saved on this device) ----------
+const BKEY = 'sof-boards-v2';
+const uid = () => Math.random().toString(36).slice(2, 9);
+function loadBoards() {
+  let B = null;
+  try { B = JSON.parse(localStorage.getItem(BKEY) || 'null'); } catch {}
+  if (!B || !Array.isArray(B.list) || !B.list.length) {
+    let old = []; try { old = JSON.parse(localStorage.getItem('sof-board-v1') || '[]'); } catch {}
+    const b = { id: uid(), name: old.length ? 'My saved pieces' : 'My board', created: Date.now(), items: old.map((x) => ({ ...x, note: '', qty: 1 })) };
+    B = { active: b.id, list: [b] };
+  }
+  if (!B.list.some((b) => b.id === B.active)) B.active = B.list[0].id;
+  return B;
+}
+let boards = loadBoards();
+const active = () => boards.list.find((b) => b.id === boards.active);
+function persist() { try { localStorage.setItem(BKEY, JSON.stringify(boards)); } catch {} renderBoard(); }
+const inBoard = (u) => active().items.some((x) => x.u === u);
+function toast(html) { const t = $('#toast'); t.innerHTML = html; t.hidden = false; clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, 2600); }
 function toggleSave(it, btn) {
-  if (inBoard(it.u)) board = board.filter((x) => x.u !== it.u);
-  else board.unshift({ n: it.n, u: it.u, i: it.i, v: it.v, d: it.d, s: it.s, c: it.c, ty: it.ty });
-  saveBoard(board);
+  const b = active();
+  if (inBoard(it.u)) { b.items = b.items.filter((x) => x.u !== it.u); toast(`Removed from <b>${escHtml(b.name)}</b>`); }
+  else { b.items.unshift({ n: it.n, u: it.u, i: it.i, v: it.v, d: it.d, s: it.s, c: it.c, ty: it.ty, note: '', qty: 1 }); toast(`Saved to <b>${escHtml(b.name)}</b> · <button type="button" class="linkbtn" onclick="document.getElementById('boardBtn').click()">View</button>`); }
+  b.updated = Date.now(); persist();
   if (btn) { btn.setAttribute('aria-pressed', inBoard(it.u)); btn.textContent = inBoard(it.u) ? '♥' : '♡'; }
 }
+function escHtml(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]); }
 function renderBoard() {
-  $('#boardCount').textContent = board.length;
+  const b = active();
+  $('#boardCount').textContent = b.items.length;
+  $('#boardPillName').textContent = b.name.length > 22 ? b.name.slice(0, 21) + '…' : b.name;
+  const sel = $('#boardSel'); sel.innerHTML = '';
+  [...boards.list].sort((x, y) => (y.updated || y.created) - (x.updated || x.created)).forEach((x) => {
+    const o = document.createElement('option'); o.value = x.id; o.textContent = `${x.name} (${x.items.length})`; if (x.id === b.id) o.selected = true; sel.appendChild(o);
+  });
+  if (document.activeElement !== $('#boardName')) $('#boardName').value = b.name;
+  const pieces = b.items.reduce((s, x) => s + (+x.qty || 1), 0);
+  $('#boardInfo').textContent = `${b.items.length} piece${b.items.length === 1 ? '' : 's'}${pieces !== b.items.length ? ` (${pieces} total)` : ''} · started ${new Date(b.created).toLocaleDateString()}`;
   const L = $('#boardList'); L.innerHTML = '';
-  if (!board.length) { L.innerHTML = '<p style="color:var(--muted)">Tap ♡ on any result to save it here for a client.</p>'; return; }
-  for (const it of board) {
+  if (!b.items.length) { L.innerHTML = '<p class="small">Tap ♡ on any result to save it to this board.</p>'; return; }
+  for (const it of b.items) {
     const row = document.createElement('div'); row.className = 'bitem';
-    const img = document.createElement('img'); img.src = it.i; img.alt = '';
+    const img = document.createElement('img'); img.src = it.i; img.alt = ''; img.referrerPolicy = 'no-referrer';
+    const body = document.createElement('div'); body.className = 'bbody';
     const a = document.createElement(state.cust ? 'span' : 'a'); a.className = 'bname';
     if (!state.cust) { a.href = it.u; a.target = '_blank'; a.rel = 'noopener'; }
     a.textContent = state.cust ? custName(it) : it.n; const sm = document.createElement('small');
     sm.textContent = (state.cust ? [it.d] : [it.v, it.s, it.d]).filter(Boolean).join(' · '); a.appendChild(sm);
+    const opts = document.createElement('div'); opts.className = 'bopts';
+    const note = document.createElement('input'); note.className = 'bnote'; note.placeholder = 'Finish, fabric, notes…'; note.value = it.note || ''; note.maxLength = 140; note.setAttribute('aria-label', 'Notes for ' + it.n);
+    note.onchange = () => { it.note = note.value.trim(); b.updated = Date.now(); try { localStorage.setItem(BKEY, JSON.stringify(boards)); } catch {} };
+    const q = document.createElement('label'); q.className = 'bqty'; q.textContent = 'Qty ';
+    const qi = document.createElement('input'); qi.type = 'number'; qi.min = 1; qi.max = 99; qi.value = it.qty || 1; qi.inputMode = 'numeric';
+    qi.onchange = () => { it.qty = Math.max(1, Math.min(99, parseInt(qi.value) || 1)); qi.value = it.qty; b.updated = Date.now(); persist(); };
+    q.appendChild(qi); opts.append(note, q); body.append(a, opts);
     const x = document.createElement('button'); x.textContent = '✕'; x.setAttribute('aria-label', 'Remove');
-    x.onclick = () => { board = board.filter((b) => b.u !== it.u); saveBoard(board); syncSaveButtons(); };
-    row.append(img, a, x); L.appendChild(row);
+    x.onclick = () => { b.items = b.items.filter((y) => y.u !== it.u); b.updated = Date.now(); persist(); syncSaveButtons(); };
+    row.append(img, body, x); L.appendChild(row);
   }
 }
 function syncSaveButtons() { document.querySelectorAll('.card').forEach((c) => { const b = c.querySelector('.save'); const u = c.dataset.u; b.setAttribute('aria-pressed', inBoard(u)); b.textContent = inBoard(u) ? '♥' : '♡'; }); }
+function switchBoard(id) { boards.active = id; persist(); syncSaveButtons(); }
 $('#custBtn').onclick = () => setCust(!state.cust);
 document.body.classList.toggle('cust', state.cust); $('#custBtn').setAttribute('aria-pressed', state.cust);
 $('#boardBtn').onclick = () => { $('#board').hidden = false; };
 $('#closeBoard').onclick = () => { $('#board').hidden = true; };
-$('#clearBoard').onclick = () => { if (confirmClear()) { board = []; saveBoard(board); syncSaveButtons(); } };
-function confirmClear() { const b = $('#clearBoard'); if (b.dataset.armed) { delete b.dataset.armed; b.textContent = 'Clear'; return true; } b.dataset.armed = 1; b.textContent = 'Tap again to clear'; setTimeout(() => { delete b.dataset.armed; b.textContent = 'Clear'; }, 3000); return false; }
+$('#boardSel').onchange = (e) => switchBoard(e.target.value);
+$('#newBoardBtn').onclick = () => { $('#newBoardForm').hidden = false; $('#newBoardName').value = ''; $('#newBoardName').focus(); };
+$('#newBoardCancel').onclick = () => { $('#newBoardForm').hidden = true; };
+$('#newBoardForm').onsubmit = (e) => {
+  e.preventDefault(); const name = $('#newBoardName').value.trim(); if (!name) return;
+  const b = { id: uid(), name, created: Date.now(), updated: Date.now(), items: [] };
+  boards.list.push(b); $('#newBoardForm').hidden = true; switchBoard(b.id); toast(`Now saving to <b>${escHtml(name)}</b>`);
+};
+$('#boardName').onchange = () => { const v = $('#boardName').value.trim(); if (v) { active().name = v; persist(); } else $('#boardName').value = active().name; };
+$('#deleteBoard').onclick = () => {
+  const btn = $('#deleteBoard');
+  if (!btn.dataset.armed) { btn.dataset.armed = 1; btn.textContent = 'Tap again to delete'; setTimeout(() => { delete btn.dataset.armed; btn.textContent = 'Delete board'; }, 3000); return; }
+  delete btn.dataset.armed; btn.textContent = 'Delete board';
+  const gone = active().name; boards.list = boards.list.filter((b) => b.id !== boards.active);
+  if (!boards.list.length) boards.list.push({ id: uid(), name: 'My board', created: Date.now(), items: [] });
+  boards.active = boards.list[0].id; persist(); syncSaveButtons(); toast(`Deleted <b>${escHtml(gone)}</b>`);
+};
 $('#copyBoard').onclick = async () => {
-  const txt = board.map((it) => state.cust ? `${custName(it)}${it.d ? ' — ' + it.d : ''}` : `${it.n} — ${it.v}${it.s ? ' (' + it.s + ')' : ''}${it.d ? ' — ' + it.d : ''}\n${it.u}`).join(state.cust ? '\n' : '\n\n');
+  const b = active();
+  const line = (it) => {
+    const extra = [it.qty > 1 ? `Qty ${it.qty}` : '', it.note].filter(Boolean).join(' · ');
+    return state.cust ? `${custName(it)}${it.d ? ' — ' + it.d : ''}${extra ? '\n   ' + extra : ''}`
+      : `${it.n} — ${it.v}${it.s ? ' (' + it.s + ')' : ''}${it.d ? ' — ' + it.d : ''}${extra ? '\n   ' + extra : ''}\n${it.u}`;
+  };
+  const txt = b.name + '\n\n' + b.items.map(line).join(state.cust ? '\n' : '\n\n');
   try { await navigator.clipboard.writeText(txt); $('#copyBoard').textContent = 'Copied!'; } catch { $('#copyBoard').textContent = 'Copy failed'; }
   setTimeout(() => ($('#copyBoard').textContent = 'Copy list'), 1800);
 };

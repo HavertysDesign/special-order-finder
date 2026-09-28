@@ -26,7 +26,7 @@
       <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 5c-5 0-9 4.5-10 7 1 2.5 5 7 10 7s9-4.5 10-7c-1-2.5-5-7-10-7Zm0 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8Zm0-2a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/></svg>
       <span class="custlabel">Customer view</span>
     </button>
-    <button id="boardBtn" class="pill" aria-label="Saved pieces">♥ <span id="boardCount">0</span></button>
+    <button id="boardBtn" class="pill" aria-label="Client boards">♥ <span class="bbname" id="boardPillName"></span> <span id="boardCount">0</span></button>
   </div>
 </nav>
 <div class="custbanner" role="status">Customer view is on: vendor names, item numbers and vendor links are hidden.</div>
@@ -104,17 +104,33 @@
   <footer class="foot">Results link to each vendor's own site, which is the source of truth for pricing, availability and specs. <span id="updated"></span> <button type="button" class="linkbtn" id="refreshOpen">Refresh catalog</button></footer>
 </div>
 
-<aside id="board" class="board" hidden aria-label="Saved pieces">
+<aside id="board" class="board" hidden aria-label="Client boards">
   <div class="boardhead">
-    <h2>Saved Pieces</h2>
+    <h2>Client Boards</h2>
     <button id="closeBoard" aria-label="Close">✕</button>
+  </div>
+  <div class="boardpick">
+    <label class="sel">Board
+      <select id="boardSel" aria-label="Choose a client board"></select>
+    </label>
+    <button type="button" class="btn" id="newBoardBtn">+ New board</button>
+  </div>
+  <form id="newBoardForm" class="newboard" hidden>
+    <input id="newBoardName" maxlength="60" placeholder="Client name – room, e.g. Johnson – Living room" aria-label="New board name">
+    <button class="btn primary" type="submit">Create</button>
+    <button class="btn" type="button" id="newBoardCancel">Cancel</button>
+  </form>
+  <div class="boardmeta">
+    <input id="boardName" maxlength="60" aria-label="Board name (tap to rename)" title="Tap to rename">
+    <small id="boardInfo"></small>
   </div>
   <div id="boardList" class="boardlist"></div>
   <div class="boardactions">
     <button class="btn primary" id="copyBoard">Copy list</button>
-    <button class="btn" id="clearBoard">Clear</button>
+    <button class="btn" id="deleteBoard">Delete board</button>
   </div>
 </aside>
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
 <dialog id="refreshDlg" class="dlg" aria-labelledby="refreshTitle">
   <form method="dialog" class="dlghead"><h2 id="refreshTitle">Refresh Catalog</h2><button aria-label="Close">✕</button></form>

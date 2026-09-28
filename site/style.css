@@ -180,3 +180,26 @@ body.cust .custbanner{display:block}
 .custbanner{display:none;background:var(--sage);color:#fff;text-align:center;font-size:13px;padding:5px 12px}
 body.cust .card .vendor, body.cust .card .actions .link, body.cust .sel.vendor, body.cust .bitem small .vd, body.cust .foot{display:none}
 body.cust .imgwrap{cursor:default}
+
+/* client boards */
+.navlinks .pill .bbname{background:none;padding:0;font-weight:400;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media (max-width:640px){.navlinks .pill .bbname{display:none}}
+.boardpick{display:flex;gap:8px;align-items:flex-end;padding:12px 16px 0}
+.boardpick .sel{flex:1;max-width:none}
+.boardpick .btn{padding:9px 12px;white-space:nowrap}
+.newboard{display:flex;gap:6px;padding:10px 16px 0;flex-wrap:wrap}
+.newboard input{flex:1 1 200px;border:1px solid var(--line);background:var(--surface);color:var(--text);border-radius:3px;padding:9px 10px;font-size:15px}
+.newboard .btn{padding:8px 12px}
+.boardmeta{padding:12px 16px 8px;border-bottom:1px solid var(--line)}
+#boardName{width:100%;border:1px solid transparent;background:transparent;color:var(--text);font:400 22px var(--serif);padding:2px 4px;margin-left:-4px;border-radius:3px}
+#boardName:hover,#boardName:focus{border-color:var(--line);background:var(--surface);outline:none}
+.boardmeta small{display:block;color:var(--muted);font-size:12px;padding-left:1px}
+.bitem{align-items:flex-start}
+.bbody{flex:1;min-width:0}
+.bbody .bname{display:block;color:var(--text);text-decoration:none;font-size:14px;font-weight:700}
+.bopts{display:flex;gap:6px;margin-top:6px}
+.bnote{flex:1;min-width:0;border:1px solid var(--line);background:var(--surface);color:var(--text);border-radius:3px;padding:6px 8px;font-size:13px}
+.bqty{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--muted)}
+.bqty input{width:52px;border:1px solid var(--line);background:var(--surface);color:var(--text);border-radius:3px;padding:5px 6px;font-size:13px}
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:3px;font-size:14px;z-index:30;box-shadow:0 6px 20px rgba(0,0,0,.25);max-width:calc(100% - 32px)}
+.toast .linkbtn{color:var(--wheat);font-size:14px}
