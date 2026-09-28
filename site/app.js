@@ -223,6 +223,7 @@ function render(items, total, ms, note) {
 
 let pending = false, running = false;
 function run() {
+  if (state.helperOn && state.helpReady) { helpGo(true); return; }
   const q = $('#q').value.trim();
   if (!q && !state.image && state.likeId == null && !state.types.size && !state.color) { $('#results').innerHTML = ''; $('#moreBtn').hidden = true; $('#empty').hidden = false; setStatus(''); state.refine.clear(); renderRefine(false); return; }
   if (!state.catalogReady) { pending = true; return; }
@@ -257,6 +258,7 @@ worker.onmessage = (e) => {
   } else if (m.type === 'roomBoxes') { onRoomBoxes(m); setStatus(''); }
   else if (m.type === 'roomRow') { onRoomRow(m); }
   else if (m.type === 'complete') { onComplete(m); }
+  else if (m.type === 'helperResult') { onHelperResult(m); }
   else if (m.type === 'roomStage') { if (m.text) setStatus(m.text); else { room.busy = false; setStatus(''); } }
   else if (m.type === 'error') {
     running = false; room.busy = false; pending = false;
@@ -387,7 +389,7 @@ document.addEventListener('paste', (e) => {
   const cd = e.clipboardData; if (!cd) return;
   const f = [...(cd.files || [])].find((f) => (f.type || '').startsWith('image/') || IMG_EXT.test(f.name || ''))
     || [...(cd.items || [])].filter((i) => i.kind === 'file' && i.type.startsWith('image/')).map((i) => i.getAsFile()).find(Boolean);
-  if (f) { e.preventDefault(); setPhoto(f); return; }
+  if (f) { e.preventDefault(); if (state.helperOn) helpSetPhoto(f); else setPhoto(f); return; }
   const u = urlFromTransfer(cd); // copied from a web page as HTML with an <img>
   if (u && /<img/i.test(cd.getData('text/html') || '') && !(e.target && e.target.id === 'q')) { e.preventDefault(); photoFromUrl(u); }
 });
@@ -406,7 +408,7 @@ dz.addEventListener('drop', (e) => {
 const room = { boxes: [], W: 0, H: 0, active: null, drawing: false, nextId: 100, busy: false };
 function roomFilters() { return { vendors: state.vendor === '' ? [] : [Number(state.vendor)], maxW: state.maxW, soOnly: state.soOnly, quick: state.quick }; }
 async function startRoom(file) {
-  $('#complete').hidden = true;
+  $('#complete').hidden = true; $('#helper').hidden = true; state.helperOn = false;
   if (!file) return;
   if (!(file instanceof Blob && file.__ok)) {
     if (!(file.type || '').startsWith('image/') && !IMG_EXT.test(file.name || '')) { photoProblem("That file isn't a photo. Use a JPG, PNG or screenshot."); return; }
@@ -497,6 +499,87 @@ $('#roomPhoto').onchange = (e) => { startRoom(e.target.files[0]); e.target.value
   });
 })();
 
+// ---------- Find a piece for this room: photo + "I need a rug, use the colors in the pillows" ----------
+const help = { image: null, key: 0, W: 0, H: 0, palette: null, drawn: null, drawing: false, lastText: '', busy: false };
+const HELP_EX = ['I need a rug to go with this room. Use the colors in the pillows.', 'A table lamp for the side table that pulls colors from the art',
+  'An accent chair that coordinates with the rug', 'Art above the sofa using the colors in the pillows', 'A coffee table that goes with the sofa'];
+HELP_EX.forEach((t) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = t; b.onclick = () => { $('#helpText').value = t; helpGo(); }; $('#helpEx').appendChild(b); });
+function helpFilters() { return { vendors: state.vendor === '' || state.cust ? [] : [Number(state.vendor)], maxW: state.maxW, soOnly: state.soOnly, quick: state.quick }; }
+function helpOpen() {
+  $('#helper').hidden = false; $('#room').hidden = true; $('#complete').hidden = true; state.helperOn = true;
+  $('#helper').scrollIntoView({ behavior: 'smooth', block: 'start' }); if (help.image) $('#helpText').focus();
+}
+function helpClose() { $('#helper').hidden = true; state.helperOn = false; state.helpReady = false; helpDrawMode(false); $('#helpSummary').innerHTML = ''; $('#results').innerHTML = ''; setStatus(''); run(); }
+async function helpSetPhoto(file) {
+  if (!file) return;
+  if (!(file.type || '').startsWith('image/') && !IMG_EXT.test(file.name || '')) { helpMsg("That file isn't a photo. Use a JPG, PNG or screenshot.", 'err'); return; }
+  let blob; try { blob = await readPhoto(file, 1600); } catch (e) { helpMsg(e.message, 'err'); return; }
+  help.image = blob; help.key++; help.palette = null; help.drawn = null;
+  const img = $('#helpImg'); img.src = URL.createObjectURL(blob); img.hidden = false; $('#helpDrop').hidden = true; $('#helpNew').hidden = false; $('#helpBoxes').innerHTML = '';
+  img.onload = () => { help.W = img.naturalWidth; help.H = img.naturalHeight; };
+  helpOpen(); $('#helpSummary').innerHTML = '';
+  if ($('#helpText').value.trim()) helpGo(); else $('#helpText').focus();
+}
+function helpMsg(text, cls = 'note') { $('#helpSummary').innerHTML = `<div class="${cls}">${escHtml(text)}</div>`; }
+function helpGo(keepPalette = false) {
+  const text = $('#helpText').value.trim();
+  if (!help.image) { helpMsg('Add the room photo first.', 'err'); return; }
+  if (!text) { helpMsg('Tell me what piece you need, for example: "a rug that uses the colors in the pillows".', 'err'); $('#helpText').focus(); return; }
+  if (!state.catalogReady) { helpMsg('One moment, the catalog is still loading…'); setTimeout(() => helpGo(keepPalette), 800); return; }
+  if (text !== help.lastText && !keepPalette) { help.palette = null; }
+  help.lastText = text; help.busy = true; running = true; state.helpReady = true;
+  $('#empty').hidden = true; $('#results').innerHTML = ''; $('#moreBtn').hidden = true; renderRefine(false);
+  setStatus(state.visionReady ? 'Working on it…' : 'Loading photo AI (first time only)…');
+  worker.postMessage({ type: 'helper', image: help.image, imageKey: help.key, text, filters: helpFilters(), palette: keepPalette ? help.palette : null, drawn: help.drawn, limit: 60 });
+}
+function helpDrawMode(on) { help.drawing = on; $('#helpDraw').setAttribute('aria-pressed', on); $('#helpPhotoWrap').classList.toggle('drawing', on); if (on) helpMsg('Drag on the photo around the part to take colors from, like a pillow or the art.'); }
+function onHelperResult(m) {
+  running = false; help.busy = false;
+  if (pending) pending = false;
+  if (m.error) { helpMsg(m.error, 'err'); setStatus(''); return; }
+  help.palette = m.palette; help.W = m.W; help.H = m.H;
+  // outline the pieces the colors came from
+  const B = $('#helpBoxes'); B.innerHTML = ''; const img = $('#helpImg'); const k = img.clientWidth / m.W;
+  m.boxes.forEach((b) => { const d = document.createElement('div'); d.className = 'rbox ref'; Object.assign(d.style, { left: b.x * k + 'px', top: b.y * k + 'px', width: b.w * k + 'px', height: b.h * k + 'px' });
+    const sp = document.createElement('span'); sp.textContent = b.label === 'your selection' ? 'colors' : b.label; d.appendChild(sp); B.appendChild(d); });
+  const S = $('#helpSummary'); S.innerHTML = '';
+  const row = (key) => { const r = document.createElement('div'); r.className = 'hrow'; const kk = document.createElement('span'); kk.className = 'hk'; kk.textContent = key; r.appendChild(kk); S.appendChild(r); return r; };
+  const r1 = row('Looking for'); r1.append(document.createTextNode(m.typeName + (m.parsed.desc ? ' · ' + m.parsed.desc : '') + (m.dims ? ' · within 5" of ' + m.dims : '')));
+  if (m.style) { const r = row('Room style'); r.append(document.createTextNode(m.style[0].toUpperCase() + m.style.slice(1) + ' ')); const hint = document.createElement('small'); hint.style.color = 'var(--muted)'; hint.textContent = '(type a style, like "traditional", to change it)'; r.appendChild(hint); }
+  const r2 = row('Colors from ' + m.source);
+  m.palette.forEach((c, i) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'hsw'; b.setAttribute('aria-pressed', !c.off); b.title = c.off ? 'Use this color again' : 'Leave this color out';
+    const dot = document.createElement('i'); dot.style.background = c.hex; b.append(dot, document.createTextNode(Math.round(c.share * 100) + '%'));
+    b.onclick = () => { help.palette[i].off = !help.palette[i].off; if (help.palette.every((x) => x.off)) help.palette[i].off = false; helpGo(true); }; r2.appendChild(b); });
+  if (m.missing && m.missing.length) { const n = document.createElement('div'); n.className = 'note'; n.textContent = `Couldn't spot the ${m.missing.map((x) => x + 's').join(' or ')} in the photo, so the colors come from ${m.source}. Tap "Pick colors from the photo" and drag around them.`; S.appendChild(n); }
+  render(m.items, m.total, 0, '');
+  const msg = m.items.length ? `Top ${m.items.length} ${m.typeName.toLowerCase()} for this room` : 'No matches. Try removing a filter or a size.';
+  state.lastMsg = msg; setStatus(msg);
+}
+$('#helpOpen').onclick = () => { helpOpen(); if (!help.image) $('#helpPhoto').click(); };
+$('#helpClose').onclick = helpClose;
+$('#helpPhoto').onchange = (e) => { const f = e.target.files[0]; e.target.value = ''; helpSetPhoto(f); };
+$('#helpPhoto2').onchange = (e) => { const f = e.target.files[0]; e.target.value = ''; helpSetPhoto(f); };
+$('#helpGo').onclick = () => helpGo();
+$('#helpText').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); helpGo(); } });
+$('#helpDraw').onclick = () => { if (!help.image) { helpMsg('Add the room photo first.', 'err'); return; } helpDrawMode(!help.drawing); };
+$('#helpPhotoWrap').addEventListener('dragover', (e) => { e.preventDefault(); e.stopPropagation(); $('#helpDrop').classList.add('drag'); });
+$('#helpPhotoWrap').addEventListener('dragleave', () => $('#helpDrop').classList.remove('drag'));
+$('#helpPhotoWrap').addEventListener('drop', (e) => { e.preventDefault(); e.stopPropagation(); $('#helpDrop').classList.remove('drag'); const f = e.dataTransfer.files && e.dataTransfer.files[0]; if (f) helpSetPhoto(f); else helpMsg('That photo came from another website. Right-click it, choose Copy image, then click here and press Ctrl+V.', 'err'); });
+(() => {
+  const wrap = $('#helpPhotoWrap'); let start = null, ghost = null;
+  const pt = (e) => { const r = $('#helpImg').getBoundingClientRect(); return { x: Math.min(Math.max(e.clientX - r.left, 0), r.width), y: Math.min(Math.max(e.clientY - r.top, 0), r.height), r }; };
+  wrap.addEventListener('pointerdown', (e) => { if (!help.drawing || !help.W) return; e.preventDefault(); wrap.setPointerCapture(e.pointerId); start = pt(e); ghost = document.createElement('div'); ghost.className = 'rbox on'; $('#helpBoxes').appendChild(ghost); });
+  wrap.addEventListener('pointermove', (e) => { if (!start) return; const p = pt(e); Object.assign(ghost.style, { left: Math.min(p.x, start.x) + 'px', top: Math.min(p.y, start.y) + 'px', width: Math.abs(p.x - start.x) + 'px', height: Math.abs(p.y - start.y) + 'px' }); });
+  wrap.addEventListener('pointerup', (e) => {
+    if (!start) return; const p = pt(e), k = help.W / p.r.width;
+    const box = { x: Math.min(p.x, start.x) * k, y: Math.min(p.y, start.y) * k, w: Math.abs(p.x - start.x) * k, h: Math.abs(p.y - start.y) * k };
+    start = null; ghost.remove(); ghost = null; if (box.w < 12 || box.h < 12) return;
+    help.drawn = box; help.palette = null; helpDrawMode(false);
+    if (!$('#helpText').value.trim()) { helpMsg('Now tell me what piece you need.'); $('#helpText').focus(); return; }
+    helpGo(true);
+  });
+})();
+
 // ---------- Refresh catalog (runs the GitHub refresh workflow) ----------
 const GH = 'https://api.github.com/repos/HavertysDesign/special-order-finder';
 const TKEY = 'sof-gh-refresh-key';
@@ -538,7 +621,7 @@ $('#runNow').onclick = async () => {
 // ---------- complete the room ----------
 const PAIRNAME = { 'Lighting': 'Lighting', 'Tables': 'Tables', 'Chairs & Seating': 'Chairs & seating', 'Rugs': 'Rugs', 'Wall Art': 'Wall art', 'Pillows & Throws': 'Pillows & throws' };
 function completeRoom(it) {
-  state.completeItem = it; $('#room').hidden = true; $('#complete').hidden = false;
+  state.completeItem = it; $('#room').hidden = true; $('#helper').hidden = true; state.helperOn = false; $('#complete').hidden = false;
   const A = $('#anchor'); A.innerHTML = '<img alt="" referrerpolicy="no-referrer"><div><small>Pieces that go with</small><strong></strong><small class="ad"></small></div>';
   A.querySelector('img').src = it.i; A.querySelector('strong').textContent = state.cust ? custName(it) : it.n;
   A.querySelector('.ad').textContent = state.cust ? (it.d || '') : [it.v, it.d].filter(Boolean).join(' · ');

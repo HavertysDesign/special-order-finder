@@ -60,6 +60,10 @@
           <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M4 18v-5a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v5h-2v-2H6v2H4Zm2-4h12v-1a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1v1Zm1-6V6a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2h-2V6H9v2H7Z"/></svg>
           Shop the room: find every piece in an inspiration photo
         </label>
+        <button type="button" class="roombtn" id="helpOpen">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 3a9 9 0 0 0 0 18c1 0 1.5-.7 1.5-1.4 0-.4-.2-.7-.4-1a1.4 1.4 0 0 1 1.1-2.3H16a5 5 0 0 0 5-5C21 6.6 17 3 12 3Zm-5.5 9a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3Zm3-4a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3Zm5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3Zm3 4a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3Z"/></svg>
+          Find a piece for this room: tell us what you need
+        </button>
       </div>
       <p class="bhint">Tip: paste or drag a photo anywhere on this page.</p>
     </form>
@@ -109,6 +113,31 @@
     <div class="roomgrid">
       <div class="roomphoto" id="roomPhotoWrap"><img id="roomImg" alt="Inspiration photo"><div id="roomBoxes"></div></div>
       <div class="roomrows" id="roomRows"></div>
+    </div>
+  </section>
+
+  <section id="helper" class="room helper" hidden aria-label="Find a piece for this room">
+    <div class="roomhead">
+      <h2 class="section-title">Find a Piece for This Room</h2>
+      <div class="roomtools"><button type="button" id="helpClose" class="btn">Close</button></div>
+    </div>
+    <div class="roomgrid">
+      <div class="roomphoto helpphoto" id="helpPhotoWrap">
+        <label class="helpdrop" id="helpDrop"><input id="helpPhoto" type="file" accept="image/*" hidden>
+          <b>Add the room photo</b><span>Tap to choose, or drag or paste it here</span></label>
+        <img id="helpImg" alt="Room photo" hidden><div id="helpBoxes"></div>
+      </div>
+      <div class="helpform">
+        <label class="helplabel" for="helpText">What do you need?</label>
+        <textarea id="helpText" rows="3" placeholder="e.g. I need a rug to go with the other pieces in this room. Use the colors in the pillows as reference."></textarea>
+        <div class="helpex" id="helpEx"></div>
+        <div class="helpacts">
+          <button type="button" class="btn primary" id="helpGo">Find it</button>
+          <button type="button" class="btn" id="helpDraw" aria-pressed="false" title="Drag a box around the part of the photo to take colors from">Pick colors from the photo</button>
+          <label class="btn" id="helpNew" hidden><input id="helpPhoto2" type="file" accept="image/*" hidden>New photo</label>
+        </div>
+        <div id="helpSummary" class="helpsum" aria-live="polite"></div>
+      </div>
     </div>
   </section>
 

@@ -474,6 +474,229 @@ async function roomMatch({ box, typeName, filters, limit }) {
 }
 
 
+// ---------- room helper: "I need a rug that goes with this room, use the colors in the pillows" ----------
+const H_TARGETS = [ // longest phrases first
+  ['bar stool', 'Chairs & Seating', 'a bar stool'], ['counter stool', 'Chairs & Seating', 'a counter stool'], ['accent chair', 'Chairs & Seating', 'an accent chair'],
+  ['swivel chair', 'Chairs & Seating', 'a swivel chair'], ['dining chair', 'Chairs & Seating', 'a dining chair'], ['armchair', 'Chairs & Seating', 'an armchair'],
+  ['chair', 'Chairs & Seating', 'an accent chair'], ['ottoman', 'Chairs & Seating', 'an ottoman'], ['pouf', 'Chairs & Seating', 'a pouf'], ['bench', 'Chairs & Seating', 'a bench'], ['stool', 'Chairs & Seating', 'a stool'],
+  ['coffee table', 'Tables', 'a coffee table'], ['cocktail table', 'Tables', 'a coffee table'], ['side table', 'Tables', 'a side table'], ['end table', 'Tables', 'a side table'],
+  ['accent table', 'Tables', 'an accent table'], ['console table', 'Tables', 'a console table'], ['sofa table', 'Tables', 'a console table'], ['dining table', 'Tables', 'a dining table'],
+  ['media console', 'Cabinets & Shelving', 'a media console'], ['tv stand', 'Cabinets & Shelving', 'a media console'], ['console', 'Tables', 'a console table'], ['table', 'Tables', 'a table'],
+  ['sectional', 'Sofas & Sectionals', 'a sectional sofa'], ['loveseat', 'Sofas & Sectionals', 'a loveseat'], ['sofa', 'Sofas & Sectionals', 'a sofa'], ['couch', 'Sofas & Sectionals', 'a sofa'],
+  ['area rug', 'Rugs', 'an area rug'], ['runner', 'Rugs', 'a runner rug'], ['rug', 'Rugs', 'an area rug'], ['carpet', 'Rugs', 'an area rug'],
+  ['table lamp', 'Lighting', 'a table lamp'], ['floor lamp', 'Lighting', 'a floor lamp'], ['chandelier', 'Lighting', 'a chandelier'], ['pendant', 'Lighting', 'a pendant light'],
+  ['sconce', 'Lighting', 'a wall sconce'], ['lamp', 'Lighting', 'a lamp'], ['light fixture', 'Lighting', 'a light fixture'], ['lighting', 'Lighting', 'a light fixture'], ['light', 'Lighting', 'a light fixture'],
+  ['wall art', 'Wall Art', 'framed wall art'], ['artwork', 'Wall Art', 'framed wall art'], ['painting', 'Wall Art', 'a painting'], ['print', 'Wall Art', 'a framed print'], ['art', 'Wall Art', 'framed wall art'],
+  ['mirror', 'Mirrors', 'a mirror'], ['throw pillow', 'Pillows & Throws', 'a throw pillow'], ['pillow', 'Pillows & Throws', 'a throw pillow'], ['throw', 'Pillows & Throws', 'a throw blanket'], ['blanket', 'Pillows & Throws', 'a throw blanket'],
+  ['headboard', 'Beds', 'a headboard'], ['bed', 'Beds', 'a bed'], ['nightstand', 'Dressers & Nightstands', 'a nightstand'], ['dresser', 'Dressers & Nightstands', 'a dresser'], ['chest', 'Dressers & Nightstands', 'a chest of drawers'],
+  ['sideboard', 'Dining Storage', 'a sideboard'], ['buffet', 'Dining Storage', 'a sideboard'], ['credenza', 'Dining Storage', 'a credenza'], ['bookcase', 'Cabinets & Shelving', 'a bookcase'],
+  ['etagere', 'Cabinets & Shelving', 'an etagere'], ['cabinet', 'Cabinets & Shelving', 'a cabinet'], ['shelf', 'Cabinets & Shelving', 'a shelf'], ['desk', 'Desks & Office', 'a desk'],
+  ['vase', 'Decor & Accessories', 'a vase'], ['bowl', 'Decor & Accessories', 'a decorative bowl'], ['sculpture', 'Decor & Accessories', 'a sculpture'], ['decor', 'Decor & Accessories', 'decorative accessories'], ['accessories', 'Decor & Accessories', 'decorative accessories'],
+  ['plant', 'Botanicals', 'a potted plant'], ['tree', 'Botanicals', 'a faux tree'], ['greenery', 'Botanicals', 'greenery'], ['florals', 'Botanicals', 'a floral arrangement'],
+  ['wall', 'Wall Art', 'framed wall art'], ['duvet', 'Bedding', 'a duvet cover'], ['bedding', 'Bedding', 'bedding'], ['quilt', 'Bedding', 'a quilt'],
+];
+// what to look for in the photo when a piece is named as the color reference
+const H_REFS = [['throw pillow', 'throw pillow'], ['pillow', 'throw pillow'], ['cushion', 'throw pillow'], ['curtain', 'curtains'], ['drape', 'curtains'], ['sectional', 'sofa'], ['sofa', 'sofa'], ['couch', 'sofa'],
+  ['armchair', 'armchair'], ['chair', 'armchair'], ['ottoman', 'ottoman'], ['wall art', 'framed wall art'], ['artwork', 'framed wall art'], ['painting', 'painting'], ['art', 'framed wall art'], ['print', 'framed wall art'],
+  ['rug', 'rug'], ['carpet', 'rug'], ['throw', 'throw blanket'], ['blanket', 'throw blanket'], ['bedding', 'bed'], ['duvet', 'bed'], ['bed', 'bed'], ['lamp', 'table lamp'], ['vase', 'vase'],
+  ['coffee table', 'coffee table'], ['table', 'coffee table'], ['cabinet', 'cabinet'], ['plant', 'potted plant'], ['wall', 'painted wall'], ['floor', 'wood floor']];
+const H_STOP = new Set('i im need needs a an the to go goes going with other pieces piece in this room rooms help me find finding something that and for looking want wants would like please can you use using make sure it its as reference references colors color colours colour tones tone from of match matches matching everything else space some one above below behind next near under over between beside around fit fits entry foyer corner wall walls side pair set two couple matching coordinate coordinates my our client clients customer customers show suggest get should work works be also well is are will on into living dining bedroom family great'.split(' '));
+function hFind(text, list) { // [{ph, val, at, end}] non-overlapping, longest phrase wins
+  const t = text.toLowerCase(), hits = [], used = new Array(t.length + 1).fill(false);
+  for (const [ph, ...val] of [...list].sort((a, b) => b[0].length - a[0].length)) {
+    const re = new RegExp('\\b' + ph.replace(/ /g, '\\s+') + '(e?s)?\\b', 'g'); let m;
+    while ((m = re.exec(t))) { const a = m.index, b = a + m[0].length; if (used.slice(a, b).some(Boolean)) continue; for (let k = a; k < b; k++) used[k] = true; hits.push({ ph, val, at: a, end: b }); }
+  }
+  return hits.sort((a, b) => a.at - b.at);
+}
+function parseHelper(text) {
+  const clauses = text.split(/[.;!?\n]+|,\s*(?=and |but |make |use |with |using )/i).map(c => c.trim()).filter(Boolean);
+  const KW = /colou?rs?|tones?|hues?|palette|match|reference|pull|inspir|like the|same as|from the|coordinat|compliment|complement|based on/i;
+  let target = null, refs = [], extra = [];
+  for (const c of clauses) {
+    const kw = c.match(KW);
+    let tHit = null;
+    if (!target) { const th = hFind(c, H_TARGETS); if (th.length && (!kw || th[0].at < kw.index)) { tHit = th[0]; target = tHit; } }
+    if (kw) {
+      // the reference pieces are the ones named right after "colors in the / matches the", or just before it ("the rug colors")
+      for (const h of hFind(c, H_REFS)) {
+        if (tHit && h.at < tHit.end) continue;
+        if (h.at > kw.index || kw.index - h.end <= 3) refs.push(h);
+      }
+      const firstRef = refs.length ? Math.min(...hFind(c, H_REFS).filter(h => !tHit || h.at >= tHit.end).map(h => h.at).concat([kw.index])) : kw.index;
+      if (tHit) extra.push(c.slice(0, tHit.at) + ' ' + c.slice(tHit.end, Math.min(firstRef, kw.index)));
+    } else if (tHit) extra.push(c.slice(0, tHit.at) + ' ' + c.slice(tHit.end));
+    else if (target) extra.push(c);
+  }
+  if (!target) { const th = hFind(text, H_TARGETS); if (th.length) target = th[0]; }
+  const seen = new Set(); refs = refs.filter(r => !seen.has(r.val[0]) && seen.add(r.val[0]));
+  const words = extra.join(' ').toLowerCase().replace(/\b\d+(\.\d+)?\s*('|"|ft|in|inch|inches|feet|foot|x)\b|\b\d+\s*x\s*\d+\b/g, ' ')
+    .replace(/[^a-z -]/g, ' ').split(/\s+/).filter(w => w.length > 1 && !H_STOP.has(w) && !hFind(w, H_TARGETS).length && !hFind(w, H_REFS).length);
+  return { target: target && { phrase: target.ph, type: target.val[0], query: target.val[1] }, refs: refs.map(r => ({ phrase: r.ph, label: r.val[0] })), desc: [...new Set(words)].join(' ') };
+}
+function kmeansLab(px, k) { // px: [[L,a,b],...]
+  if (!px.length) return [];
+  const sorted = px.slice().sort((a, b) => a[0] - b[0]); let cen = Array.from({ length: k }, (_, j) => sorted[Math.floor((j + 0.5) * sorted.length / k)].slice());
+  let lab = new Int32Array(px.length);
+  for (let it = 0; it < 10; it++) {
+    for (let i = 0; i < px.length; i++) { let bd = 1e9, bj = 0; for (let j = 0; j < k; j++) { const d = (px[i][0] - cen[j][0]) ** 2 + (px[i][1] - cen[j][1]) ** 2 + (px[i][2] - cen[j][2]) ** 2; if (d < bd) { bd = d; bj = j; } } lab[i] = bj; }
+    const sum = Array.from({ length: k }, () => [0, 0, 0, 0]);
+    for (let i = 0; i < px.length; i++) { const s = sum[lab[i]]; s[0] += px[i][0]; s[1] += px[i][1]; s[2] += px[i][2]; s[3]++; }
+    cen = sum.map((s, j) => s[3] ? [s[0] / s[3], s[1] / s[3], s[2] / s[3]] : cen[j]);
+  }
+  const cnt = new Array(k).fill(0); for (let i = 0; i < px.length; i++) cnt[lab[i]]++;
+  return cen.map((c, j) => ({ L: c[0], a: c[1], b: c[2], share: cnt[j] / px.length })).filter(c => c.share > 0).sort((x, y) => y.share - x.share);
+}
+function rgb2lab(r, g, b) {
+  const f1 = (v) => { v /= 255; return v > 0.04045 ? ((v + 0.055) / 1.055) ** 2.4 : v / 12.92; };
+  const R = f1(r), G = f1(g), B = f1(b);
+  const X = (R * 0.4124 + G * 0.3576 + B * 0.1805) / 0.95047, Y = R * 0.2126 + G * 0.7152 + B * 0.0722, Z = (R * 0.0193 + G * 0.1192 + B * 0.9505) / 1.08883;
+  const f = (t) => t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116;
+  return [116 * f(Y) - 16, 500 * (f(X) - f(Y)), 200 * (f(Y) - f(Z))];
+}
+function lab2hex(L, a, b) {
+  const fy = (L + 16) / 116, fx = fy + a / 500, fz = fy - b / 200, f = (t) => t ** 3 > 0.008856 ? t ** 3 : (t - 16 / 116) / 7.787;
+  const X = f(fx) * 0.95047, Y = f(fy), Z = f(fz) * 1.08883;
+  const lin = [3.2406 * X - 1.5372 * Y - 0.4986 * Z, -0.9689 * X + 1.8758 * Y + 0.0415 * Z, 0.0557 * X - 0.2040 * Y + 1.0570 * Z];
+  return '#' + lin.map(c => Math.round(255 * Math.min(1, Math.max(0, c > 0.0031308 ? 1.055 * c ** (1 / 2.4) - 0.055 : 12.92 * c)))).map(v => v.toString(16).padStart(2, '0')).join('');
+}
+function ringColors(bmp, box, W, H) {
+  const g = 0.35, x0 = Math.max(0, box.x - box.w * g), y0 = Math.max(0, box.y - box.h * g), x1 = Math.min(W, box.x + box.w * (1 + g)), y1 = Math.min(H, box.y + box.h * (1 + g));
+  const S = 96, sc = Math.min(1, S / Math.max(x1 - x0, y1 - y0)), w = Math.max(4, Math.round((x1 - x0) * sc)), h = Math.max(4, Math.round((y1 - y0) * sc));
+  const cv = new OffscreenCanvas(w, h), cx = cv.getContext('2d'); cx.drawImage(bmp, x0, y0, x1 - x0, y1 - y0, 0, 0, w, h);
+  const d = cx.getImageData(0, 0, w, h).data, px = [];
+  const bx0 = (box.x - x0) * sc, by0 = (box.y - y0) * sc, bx1 = bx0 + box.w * sc, by1 = by0 + box.h * sc;
+  for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) { if (xx >= bx0 && xx < bx1 && yy >= by0 && yy < by1) continue; const i = (yy * w + xx) * 4; px.push(rgb2lab(d[i], d[i + 1], d[i + 2])); }
+  return kmeansLab(px, 3);
+}
+function objectColors(bmp, box, W, H) {
+  const inner = regionColors(bmp, box, 4), ring = ringColors(bmp, box, W, H).filter(c => c.share >= 0.25);
+  let own = inner.filter(c => !ring.some(r => de2000(r.L, r.a, r.b, c.L, c.a, c.b) < 9));
+  if (own.reduce((t, c) => t + c.share, 0) < 0.2) own = inner;
+  // shadows read as a darker color than the piece really is: drop deep tones when lighter ones carry the piece
+  const maxL = Math.max(...own.map(c => c.L)), lit = own.filter(c => c.L >= Math.min(30, maxL * 0.6));
+  if (lit.reduce((t, c) => t + c.share, 0) >= 0.35) own = lit;
+  const tot = own.reduce((t, c) => t + c.share, 0);
+  return own.map(c => ({ ...c, share: c.share / (tot || 1) }));
+}
+function regionColors(bmp, box, k = 3) {
+  const S = 96, ix = box.x + box.w * 0.12, iy = box.y + box.h * 0.12, iw = box.w * 0.76, ih = box.h * 0.76; // inner part: less background
+  const sc = Math.min(1, S / Math.max(iw, ih)), w = Math.max(4, Math.round(iw * sc)), h = Math.max(4, Math.round(ih * sc));
+  const cv = new OffscreenCanvas(w, h), cx = cv.getContext('2d'); cx.drawImage(bmp, ix, iy, iw, ih, 0, 0, w, h);
+  const d = cx.getImageData(0, 0, w, h).data, px = [];
+  for (let i = 0; i < d.length; i += 4) px.push(rgb2lab(d[i], d[i + 1], d[i + 2]));
+  return kmeansLab(px, k);
+}
+// Merge colors from several boxes into a palette; drop near-duplicates (the eye sees them as one color).
+function mergePalette(list, max = 5) {
+  const all = list.flat().sort((a, b) => b.share - a.share), out = [];
+  for (const c of all) {
+    const same = out.find(o => de2000(o.L, o.a, o.b, c.L, c.a, c.b) < 7);
+    if (same) { same.share += c.share; continue; }
+    if (c.share < 0.12) continue;
+    out.push({ ...c });
+  }
+  const tot = out.reduce((s, c) => s + c.share, 0) || 1;
+  return out.sort((a, b) => b.share - a.share).slice(0, max).map(c => ({ L: c.L, a: c.a, b: c.b, share: c.share / tot, hex: lab2hex(c.L, c.a, c.b) }));
+}
+const H_STYLES = [
+  ['modern', 'a modern minimalist room with clean lines and a neutral palette'], ['contemporary', 'a contemporary room with bold modern furniture'],
+  ['transitional', 'a transitional room mixing classic and modern furniture'], ['traditional', 'a traditional room with classic ornate furniture and patterns'],
+  ['farmhouse', 'a rustic farmhouse room with reclaimed wood'], ['coastal', 'a light and airy coastal beach house room'],
+  ['mid-century modern', 'a mid-century modern room with walnut furniture'], ['bohemian', 'a bohemian room with layered patterns, rattan and plants'],
+  ['glam', 'a glamorous room with velvet, mirrors and gold accents'], ['industrial', 'an industrial loft room with metal and exposed brick'],
+];
+const H_STYLE_WORD = { modern: 'modern minimalist', contemporary: 'contemporary', transitional: 'transitional', traditional: 'traditional', farmhouse: 'rustic farmhouse',
+  coastal: 'coastal', 'mid-century modern': 'mid-century modern', bohemian: 'bohemian', glam: 'glam', industrial: 'industrial' };
+let H_STYLE_EMB = null;
+async function roomStyle(vec) {
+  if (!H_STYLE_EMB) { H_STYLE_EMB = []; for (const [, p] of H_STYLES) H_STYLE_EMB.push(await embedText('a photo of ' + p)); }
+  const sc = H_STYLE_EMB.map(e => { let a = 0; for (let j = 0; j < DIM; j++) a += e[j] * vec[j]; return a; });
+  const o = [...sc.keys()].sort((a, b) => sc[b] - sc[a]);
+  return H_STYLES[o[0]][0];
+}
+let HELP = null; // { key, bmp, W, H, roomVec, found: {label: boxes} }
+async function helperDetect(labels) {
+  const need = labels.filter(l => !(l in HELP.found)); if (!need.length) return;
+  await loadDetector();
+  post('roomStage', { text: 'Finding ' + need.map(l => l + 's').join(' and ') + ' in the photo…' });
+  const bmp = HELP.bmp, S = 768, sc = Math.min(1, S / Math.max(bmp.width, bmp.height));
+  const w = Math.round(bmp.width * sc), h = Math.round(bmp.height * sc);
+  const cv = new OffscreenCanvas(w, h); cv.getContext('2d').drawImage(bmp, 0, 0, w, h);
+  const img = new RawImage(cv.getContext('2d').getImageData(0, 0, w, h).data, w, h, 4).rgb();
+  const raw = await detector(img, need.map(l => 'a photo of a ' + l), { threshold: 0.08, topk: 40 });
+  for (const l of need) {
+    const bs = raw.filter(o => o.label === 'a photo of a ' + l).map(o => ({ label: l, score: o.score, x: o.box.xmin / sc, y: o.box.ymin / sc, w: (o.box.xmax - o.box.xmin) / sc, h: (o.box.ymax - o.box.ymin) / sc }))
+      .filter(b => b.w > 10 && b.h > 10 && (b.w * b.h) / (HELP.W * HELP.H) < 0.6).sort((a, b) => b.score - a.score);
+    const keep = []; for (const b of bs) { if (keep.every(k => iou(k, b) < 0.3)) keep.push(b); if (keep.length >= 6) break; }
+    HELP.found[l] = keep.filter(b => b.score >= Math.max(0.1, keep[0] ? keep[0].score * 0.45 : 0));
+  }
+}
+async function roomHelper({ image, imageKey, text, filters, palette: userPalette, drawn, limit }) {
+  const P = parseHelper(text || '');
+  if (!P.target) { post('helperResult', { error: "Tell me which piece you need, for example: “a rug”, “a table lamp” or “a coffee table”.", parsed: P }); return; }
+  if (!HELP || HELP.key !== imageKey) {
+    const bmp = await createImageBitmap(image);
+    HELP = { key: imageKey, bmp, W: bmp.width, H: bmp.height, found: {}, roomVec: null };
+  }
+  await loadVision(); await loadText();
+  if (!HELP.roomVec) { post('roomStage', { text: 'Looking at the room…' }); HELP.roomVec = await embedRegion(HELP.bmp, 0, 0, HELP.W, HELP.H); HELP.style = await roomStyle(HELP.roomVec); }
+  const STYLE_RE = new RegExp('\\b(' + Object.keys(H_STYLE_WORD).join('|') + '|rustic|boho|mid century|midcentury|minimalist)\\b', 'i');
+  const style = STYLE_RE.test(P.desc) ? '' : HELP.style; // a style the designer typed wins
+  // color reference: a box the designer drew, else the pieces named in the request, else the whole room
+  let refBoxes = [], missing = [], palette = null, source = '';
+  if (drawn) { refBoxes = [{ ...drawn, label: 'your selection' }]; source = 'the area you selected'; }
+  else if (P.refs.length) {
+    await helperDetect(P.refs.map(r => r.label));
+    for (const r of P.refs) { const b = HELP.found[r.label] || []; if (b.length) refBoxes.push(...b); else missing.push(r.phrase); }
+    source = P.refs.filter(r => (HELP.found[r.label] || []).length).map(r => r.phrase + 's').join(' and ');
+  }
+  if (refBoxes.length) palette = mergePalette(refBoxes.map(b => (b.label === 'your selection' ? regionColors(HELP.bmp, b, 4) : objectColors(HELP.bmp, b, HELP.W, HELP.H)).map(c => ({ ...c, share: c.share * (b.label === 'your selection' ? 1 : Math.sqrt(b.w * b.h)) }))));
+  else { palette = mergePalette([regionColors(HELP.bmp, { x: 0, y: HELP.H * 0.25, w: HELP.W, h: HELP.H * 0.75 }, 5)]); source = source || 'the whole room'; if (P.refs.length) source = 'the whole room'; }
+  if (userPalette) palette = userPalette; // designer switched some colors off
+  // score: room style (whole photo) + the words in the request + color
+  const ti = TYPES.indexOf(P.target.type);
+  const qv = await embedText(('a product photo of ' + (style ? 'a ' + H_STYLE_WORD[style] + ' ' : '') + (P.desc ? P.desc + ' ' : '') + P.target.query.replace(/^(a|an) /, '')).trim());
+  const dq = parseDims(text); const hasDims = !!(dq.rug || dq.cons.length);
+  const f = filters || {}; const vset = f.vendors && f.vendors.length ? new Set(f.vendors) : null;
+  const idx = [];
+  for (let i = 0; i < N; i++) {
+    if (META.t[i] !== ti) continue;
+    if (vset && !vset.has(META.v[i])) continue;
+    if (f.soOnly && META.so && META.so[i] === 0) continue;
+    if (f.quick && !QS[i]) continue;
+    if (f.maxW && META.w[i] && META.w[i] > f.maxW) continue;
+    if (hasDims && fitsDims(i, dq) <= 0) continue;
+    idx.push(i);
+  }
+  const act = palette.filter(c => !c.off);
+  const styleSim = idx.map(i => { let a = 0; const o = i * DIM; for (let j = 0; j < DIM; j++) a += EMB[o + j] * HELP.roomVec[j]; return a; });
+  const words = idx.map(i => { let a = 0; const o = i * DIM; for (let j = 0; j < DIM; j++) a += EMB[o + j] * qv[j]; return a; });
+  const col = idx.map(i => {
+    if (!COL || !act.length) return 0; const o = i * 12; const ds = [];
+    for (const p of act) { let best = 60; for (let k = 0; k < 3; k++) { const sh = COL[o + k * 4 + 3] / 255; if (sh < 0.1) continue; const d = de2000(p.L, p.a, p.b, COL[o + k * 4] / 2.55, COL[o + k * 4 + 1] - 128, COL[o + k * 4 + 2] - 128) + 6 * Math.max(0, 0.4 - sh); if (d < best) best = d; } ds.push(best); }
+    ds.sort((a, b) => a - b); const n = Math.min(ds.length, 2); // the piece should carry at least one, ideally two, of the colors
+    // ...and not bring in big areas of colors that aren't in the palette (a bright blue rug for a neutral room)
+    let extra = 0, ew = 0;
+    for (let k = 0; k < 3; k++) { const sh = COL[o + k * 4 + 3] / 255; if (sh < 0.15) continue; let best = 60;
+      for (const p of act) best = Math.min(best, de2000(p.L, p.a, p.b, COL[o + k * 4] / 2.55, COL[o + k * 4 + 1] - 128, COL[o + k * 4 + 2] - 128));
+      extra += sh * Math.max(0, best - 8); ew += sh; }
+    return -(ds.slice(0, n).reduce((s, x) => s + x, 0) / n) - 0.6 * (ew ? extra / ew : 0);
+  });
+  const zS = zs(styleSim), zW = zs(words), zC = zs(col);
+  const tot = idx.map((i, k) => 0.6 * zS[k] + 0.9 * zW[k] + (act.length ? 1.3 : 0) * zC[k]);
+  const order = idx.map((i, k) => [i, tot[k]]).sort((a, b) => b[1] - a[1]).map(x => x[0]);
+  const out = [], seenImg = new Set(), seenName = new Set(), perV = {};
+  for (const i of order) {
+    const key = META.v[i] + '|' + NAMELC[i].replace(/[^a-z0-9]/g, ''); if (seenImg.has(META.i[i]) || seenName.has(key)) continue;
+    if (out.length < 24 && (perV[META.v[i]] || 0) >= 5 && !(vset && vset.size === 1)) continue;
+    seenImg.add(META.i[i]); seenName.add(key); perV[META.v[i]] = (perV[META.v[i]] || 0) + 1; out.push(i); if (out.length >= (limit || 60)) break;
+  }
+  post('roomStage', { text: '' });
+  post('helperResult', { parsed: P, style: style || '', typeName: TYPES[ti], palette, source, missing, boxes: refBoxes.map(b => ({ x: b.x, y: b.y, w: b.w, h: b.h, label: b.label })), W: HELP.W, H: HELP.H, dims: hasDims ? describeDims(dq) : '', total: idx.length,
+    items: out.map(i => ({ id: i, n: META.n[i], i: META.i[i], u: META.u[i], v: VENDORS[META.v[i]], c: META.c[i], d: META.d[i], s: META.s[i], ty: TYPES[META.t[i]], qs: QS[i], so: META.so ? META.so[i] : 1, vr: META.vrules ? META.vrules[META.v[i]] : '', W: META.w[i], D: META.dd[i], H: META.dh[i] })) });
+}
+
 // ---------- complete the room: pieces in other categories that share this piece's style and color ----------
 const PAIRS = {
   'Sofas & Sectionals': ['Rugs', 'Tables', 'Chairs & Seating', 'Lighting', 'Pillows & Throws', 'Wall Art'],
@@ -542,5 +765,7 @@ self.onmessage = async (e) => {
     else if (m.type === 'room') await roomDetect(m);
     else if (m.type === 'complete') await complete(m);
     else if (m.type === 'roomMatch') await roomMatch(m);
+    else if (m.type === 'helper') await roomHelper(m);
+    else if (m.type === 'helperParse') post('helperParsed', { parsed: parseHelper(m.text || '') });
   } catch (err) { post('error', { message: String(err && err.message || err) }); }
 };

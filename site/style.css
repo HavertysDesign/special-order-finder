@@ -275,3 +275,29 @@ body.cust .cmptbl .vendorrow{display:none}
 .cdot{display:inline-block;width:11px;height:11px;border-radius:50%;border:1px solid rgba(0,0,0,.2);vertical-align:-1px;margin-right:4px}
 .qsbadge{display:inline-block;margin-top:4px;font-size:11px;font-weight:700;padding:2px 7px;border-radius:2px;text-transform:uppercase;letter-spacing:.04em;cursor:help;align-self:flex-start;background:#e3ebe2;color:#3d4f3d}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .qsbadge{background:#2f3d30;color:#cfe0cd}}
+
+/* find a piece for this room */
+.roomcta{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+button.roombtn{background:none;font:inherit;font-size:15px}
+.helpphoto{min-height:220px}
+.helpdrop{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-height:240px;border:2px dashed var(--line);border-radius:4px;cursor:pointer;color:var(--muted);text-align:center;padding:20px;background:var(--surface)}
+.helpdrop b{color:var(--text);font-size:16px}
+.helpdrop.drag{border-color:var(--sage);background:rgba(103,125,104,.08)}
+.helpform{display:flex;flex-direction:column;gap:10px;min-width:0}
+.helplabel{font-weight:700;font-size:15px;color:var(--text)}
+.helpform textarea{width:100%;font:15px/1.4 var(--sans);padding:10px 12px;border:1px solid var(--line);border-radius:3px;background:var(--surface);color:var(--text);resize:vertical}
+.helpex{display:flex;flex-wrap:wrap;gap:6px}
+.helpex button{border:1px solid var(--line);background:var(--surface);color:var(--muted);border-radius:14px;padding:4px 10px;font-size:12.5px;cursor:pointer;text-align:left}
+.helpex button:hover{border-color:var(--sage);color:var(--text)}
+.helpacts{display:flex;gap:8px;flex-wrap:wrap}
+#helpDraw[aria-pressed="true"]{background:var(--sage);border-color:var(--sage);color:#fff}
+.helpsum{font-size:14px;color:var(--text);display:flex;flex-direction:column;gap:8px}
+.helpsum .hrow{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.helpsum .hk{font-weight:700;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.06em;margin-right:4px}
+.helpsum .note{color:#7a5413;background:#fbf0de;padding:6px 10px;border-radius:3px}
+.helpsum .err{color:#8a3b22;background:#f7e3dd;padding:6px 10px;border-radius:3px}
+.hsw{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--surface);border-radius:14px;padding:3px 9px 3px 4px;font-size:12px;color:var(--text);cursor:pointer}
+.hsw i{width:20px;height:20px;border-radius:50%;border:1px solid rgba(0,0,0,.2)}
+.hsw[aria-pressed="false"]{opacity:.4;text-decoration:line-through}
+.rbox.ref{border-color:#fff;border-style:dashed;background:rgba(255,255,255,.06);cursor:default}
+.rbox.ref span{background:#fff}
