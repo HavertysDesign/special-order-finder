@@ -66,13 +66,38 @@ def kw(it):
         seen.add(w); out.append(w)
         if len(out)>=14: break
     return ' '.join(out)
-meta={'n':[],'i':[],'u':[],'v':[],'c':[],'d':[],'s':[],'k':[],'t':[],'w':[]}
+from dims import parse as pdims, rug_sizes, from_name
+import glob
+DIMMAP={}
+for f in glob.glob('data/dims-*.json'): DIMMAP.update(json.load(open(f)))
+def ft(x): return f"{x//12}'" + (f'{x%12}"' if x%12 else '')
+def fmt_rug(a,b): return f'{ft(a)} x {ft(b)}'
+def dims_of(it,t):
+    src=[it['d'], DIMMAP.get(it['u'],''), it.get('x','')]
+    rs=[]
+    if t=='Rugs':
+        for s_ in src+[it['n']]: rs+=rug_sizes(s_)
+        rs=list(dict.fromkeys(rs))[:12]
+    d={}
+    for s_ in src:
+        d=pdims(s_)
+        if d: break
+    if not d and t!='Rugs':
+        w=from_name(it['n'])
+        if w: d={'W':w}
+    return d,rs
+meta={'n':[],'i':[],'u':[],'v':[],'c':[],'d':[],'s':[],'k':[],'t':[],'w':[],'dd':[],'dh':[],'rs':[]}
 for it in items:
     t=typ(it)
     nm=it['n']; nm=nm.title() if nm.isupper() and len(nm)>4 else nm
     cc=[x.strip() for x in re.split(r'>|/',it['c']) if x.strip()]; cc=cc[-1] if cc else ''; cc=cc.title() if cc.isupper() else cc
     meta['n'].append(nm); meta['i'].append(it['i']); meta['u'].append(it['u']); meta['v'].append(vi[it['v']])
-    meta['c'].append(cc[:40]); meta['d'].append(it['d'][:48]); meta['s'].append(it['s'][:24]); meta['k'].append(kw(it)); meta['t'].append(TYPES.index(t)); meta['w'].append(width(it['d'],t))
+    meta['c'].append(cc[:40]); meta['d'].append(it['d'][:48]); meta['s'].append(it['s'][:24]); meta['k'].append(kw(it)); meta['t'].append(TYPES.index(t))
+    dm,rs=dims_of(it,t)
+    meta['w'].append(round(dm.get('W',0),1)); meta['dd'].append(round(dm.get('D',0),1)); meta['dh'].append(round(dm.get('H',0),1))
+    meta['rs'].append([a for p in rs for a in p] if rs else 0)
+    if t=='Rugs' and rs: meta['d'][-1]=', '.join(fmt_rug(a,b) for a,b in rs[:4])+(' +more' if len(rs)>4 else '')
+    elif not it['d'] and dm: meta['d'][-1]=' x '.join(f'{dm[k]:g}"{k}' for k in ('W','D','H') if k in dm)
 meta['vendors']=[V[k] for k in vk]; meta['types']=TYPES
 # representative image per type: best CLIP match for a plain product-photo prompt
 sys.path.insert(0,'embed')
@@ -93,4 +118,5 @@ import time; json.dump({'v':str(int(time.time()))},open('site/data/version.json'
 json.dump({'dim':D,'mean':[round(float(x),6) for x in mean],'comp':[[round(float(x),6) for x in r] for r in comp]},open('site/data/pca.json','w'),separators=(',',':'))
 from collections import Counter
 print(Counter(TYPES[t] for t in meta['t']).most_common())
+hd=sum(1 for i in range(len(meta['n'])) if meta['w'][i] or meta['dd'][i] or meta['dh'][i] or meta['rs'][i]); print('with dims',hd,'of',len(meta['n']))
 print('sizes MB', {f:round(os.path.getsize('site/data/'+f)/1e6,1) for f in os.listdir('site/data')})

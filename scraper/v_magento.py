@@ -17,7 +17,15 @@ def walk(c,path):
 for c in (cats.get('data') or {}).get('categoryList') or []: walk(c,[])
 print(key,'cats',len(allc),flush=True)
 items={}
-F='items{name sku url_key url_suffix canonical_url small_image{url} image{url} description{html} categories{name}}'
+EXTRA={'crestview':'cv_furniture_length cv_furniture_width cv_furniture_height cv_furniture_depth','paragon':'overall_size'}.get(key,'')
+F='items{name sku url_key url_suffix canonical_url small_image{url} image{url} description{html} categories{name} %s}'%EXTRA
+def extra_dims(it):
+    if key=='crestview':
+        L,Wd,Hh,Dp=[it.get('cv_furniture_'+k) for k in ('length','width','height','depth')]
+        W=L or Wd; D=Dp or (Wd if L else None)
+        return ' x '.join(f'{float(v):g}"{k}' for k,v in (('W',W),('D',D),('H',Hh)) if v)
+    if key=='paragon': return it.get('overall_size') or ''
+    return ''
 def fetch(filt):
     page=1
     while True:
@@ -30,7 +38,7 @@ def fetch(filt):
             if 'placeholder' in img: img=(it.get('small_image') or {}).get('url','')
             desc=clean(BeautifulSoup((it.get('description') or {}).get('html') or '','lxml').get_text(' '))
             cats=[c['name'] for c in it.get('categories') or [] if c['name'] not in ('Products','All Products','Default Category')]
-            items[it['sku']]={'url':url,'name':clean(it['name']),'image':img,'sku':it['sku'],'desc':desc[:600],'category':' > '.join(dict.fromkeys(cats))[:200],'dims':find_dims(desc)}
+            items[it['sku']]={'url':url,'name':clean(it['name']),'image':img,'sku':it['sku'],'desc':desc[:600],'category':' > '.join(dict.fromkeys(cats))[:200],'dims':extra_dims(it) or find_dims(desc)}
         tp=(p.get('page_info') or {}).get('total_pages') or 1
         if page>=tp or (filt.startswith("search") and page>=5): break
         page+=1

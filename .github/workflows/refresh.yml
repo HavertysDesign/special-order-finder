@@ -28,6 +28,8 @@ jobs:
       LEFTBANK_PASS: ${{ secrets.LEFTBANK_PASS }}
       LIBERTY_USER: ${{ secrets.LIBERTY_USER }}
       LIBERTY_PASS: ${{ secrets.LIBERTY_PASS }}
+      FOURHANDS_USER: ${{ secrets.FOURHANDS_USER }}
+      FOURHANDS_PASS: ${{ secrets.FOURHANDS_PASS }}
       JOBS: '8'
     steps:
       - uses: actions/checkout@v4
@@ -45,6 +47,11 @@ jobs:
       - name: Scrape vendors
         if: ${{ github.event.inputs.skip_scrape != 'true' }}
         run: python scraper/run_all.py ${{ github.event.inputs.vendors }}
+      - name: Fill in product sizes
+        if: ${{ github.event.inputs.skip_scrape != 'true' }}
+        continue-on-error: true
+        timeout-minutes: 150
+        run: python scraper/v_shopsizes.py && python scraper/v_dims.py
       - name: Build catalog
         run: python build_catalog.py
       - name: Embed new product photos

@@ -89,8 +89,67 @@ function dotAll(q) {
 const STOP = new Set('a an the and or with for in of to on by w/ x ft in. inch inches'.split(' '));
 function tokens(q) { return q.toLowerCase().replace(/[^a-z0-9"'./ -]/g, ' ').split(/\s+/).filter(t => t.length > 1 && !STOP.has(t)); }
 
+
+// ---------- dimensions in the search text ----------
+// "84 inch sofa", "84"W x 40"D", "36 in round", "30" tall lamp", "8x10 rug", "9' round rug".
+// Results must be within ±TOL inches of every size given; pieces with no listed size are left out.
+const TOL = 5;
+const LBL = { w: 'W', wide: 'W', width: 'W', l: 'W', long: 'W', length: 'W', dia: 'W', diam: 'W', diameter: 'W', round: 'W', d: 'D', deep: 'D', depth: 'D', h: 'H', high: 'H', tall: 'H', height: 'H', ht: 'H' };
+function parseDims(q) {
+  let s = ' ' + q.toLowerCase().replace(/[”“″]/g, '"').replace(/’/g, "'") + ' ';
+  const cons = []; let rug = null;
+  const cut = (m) => { s = s.replace(m, ' '); };
+  const isRug = /\b(rugs?|runner|carpet)\b/.test(s);
+  // rug sizes in feet: 8'x10', 5'3" x 7'6", 8x10 (when the search is about rugs), 8 ft round
+  let m = s.match(/(\d{1,2})\s*(?:'|ft\b|feet\b|foot\b)\s*(?:(\d{1,2})\s*(?:"|in\b))?\s*(?:x|by|×)\s*(\d{1,2})\s*(?:'|ft\b|feet\b|foot\b)?\s*(?:(\d{1,2})\s*(?:"|in\b))?/)
+    || (isRug && s.match(/\b(\d{1,2})()\s*(?:x|by|×)\s*(\d{1,2})()\b/));
+  if (m) { const a = (+m[1]) * 12 + (+m[2] || 0), b = (+m[3]) * 12 + (+m[4] || 0); rug = [Math.min(a, b), Math.max(a, b)]; cut(m[0]); }
+  else if ((m = s.match(/(\d{1,2})\s*(?:'|ft\b|feet\b|foot\b)\s*(?:(\d{1,2})\s*(?:"|in\b))?\s*(round|square)?/)) && (isRug || m[3])) {
+    const a = (+m[1]) * 12 + (+m[2] || 0); if (isRug) rug = [a, a]; else cons.push({ k: 'W', v: a }); cut(m[0]);
+  }
+  const NUM = '(\\d{1,3}(?:\\.\\d+)?)(?:\\s*(\\d)\\/(\\d))?';
+  const val = (m, i) => +m[i] + (m[i + 1] ? m[i + 1] / m[i + 2] : 0);
+  const UNIT = '\\s*(?:"|-?\\s*inch(?:es)?\\b|in\\b\\.?)?\\s*';
+  // 84 x 40 x 36 (inches)
+  if (!rug && (m = s.match(new RegExp(NUM + '\\s*"?\\s*(?:x|×|by)\\s*' + NUM + '\\s*"?(?:\\s*(?:x|×|by)\\s*' + NUM + '\\s*"?)?')))) {
+    cons.push({ k: 'W', v: val(m, 1) }, { k: 'D', v: val(m, 4) }); if (m[7]) cons.push({ k: 'H', v: val(m, 7) }); cut(m[0]);
+  }
+  // 84"W, 84 inches wide, 30" tall, 60 in round, 20 deep
+  let re = new RegExp(NUM + UNIT + '(wide|width|long|length|diameter|diam|dia|round|deep|depth|high|tall|height|ht|w|l|d|h)\\b');
+  while ((m = s.match(re))) { const k = LBL[m[4]]; if (k && !cons.some(c => c.k === k)) cons.push({ k, v: val(m, 1) }); cut(m[0]); if (m[4] === 'round' || m[4] === 'diameter' || m[4] === 'dia') s += ' round '; }
+  // width 84 / W: 84
+  re = new RegExp('\\b(width|depth|height|diameter|w|d|h)\\s*[:=]?\\s*' + NUM + '\\s*(?:"|in\\b|inch(?:es)?\\b)');
+  while ((m = s.match(re))) { const k = LBL[m[1]]; if (k && !cons.some(c => c.k === k)) cons.push({ k, v: val(m, 2) }); cut(m[0]); }
+  // a lone size with a unit: 84" sofa, 84 inch sofa, 84-inch
+  re = new RegExp(NUM + '\\s*(?:"|-?\\s*inch(?:es)?\\b|in\\b(?=\\s))');
+  while ((m = s.match(re))) { cons.push({ k: 'ANY', v: val(m, 1) }); cut(m[0]); }
+  return { cons, rug, rest: s.replace(/\s+/g, ' ').trim() };
+}
+function fitsDims(i, dq) {
+  if (dq.rug) {
+    const rs = META.rs[i]; if (!rs) return 0;
+    for (let j = 0; j < rs.length; j += 2) if (Math.abs(rs[j] - dq.rug[0]) <= TOL && Math.abs(rs[j + 1] - dq.rug[1]) <= TOL) return 1;
+    return -1;
+  }
+  const W = META.w[i], D = META.dd[i], H = META.dh[i];
+  for (const c of dq.cons) {
+    const have = c.k === 'W' ? W : c.k === 'D' ? D : c.k === 'H' ? H : Math.max(W, D, H);
+    if (!have) return 0;                  // size not listed
+    if (Math.abs(have - c.v) > TOL) return -1;
+  }
+  return 1;
+}
+function describeDims(dq) {
+  const ft = (x) => Math.floor(x / 12) + "'" + (x % 12 ? (x % 12) + '"' : '');
+  if (dq.rug) return dq.rug[0] === dq.rug[1] ? `${ft(dq.rug[0])} rugs` : `${ft(dq.rug[0])} x ${ft(dq.rug[1])} rugs`;
+  const nm = { W: 'wide', D: 'deep', H: 'tall', ANY: '' };
+  return dq.cons.map(c => `${+c.v.toFixed(2)}"${nm[c.k] ? ' ' + nm[c.k] : ''}`).join(', ');
+}
+
 async function search({ q, image, likeId, filters, limit }) {
   const t0 = performance.now();
+  const dq = parseDims(q || ''); const hasDims = !!(dq.rug || dq.cons.length);
+  q = hasDims ? dq.rest : q;
   const qt = tokens(q || '');
   let score = new Float32Array(N), hasVec = false, note = '';
   if (!qt.length && !image && likeId == null) { // browse: stable shuffle so vendors are mixed
@@ -115,11 +174,12 @@ async function search({ q, image, likeId, filters, limit }) {
   const f = filters || {};
   const vset = f.vendors && f.vendors.length ? new Set(f.vendors) : null;
   const tset = f.types && f.types.length ? new Set(f.types) : null;
-  const idx = [];
+  const idx = []; let noSize = 0;
   for (let i = 0; i < N; i++) {
     if (score[i] <= -1) continue;
     if (vset && !vset.has(META.v[i])) continue;
     if (tset && !tset.has(META.t[i])) continue;
+    if (hasDims) { const fd = fitsDims(i, dq); if (fd <= 0) { if (fd === 0 && score[i] > 0.2) noSize++; continue; } }
     if (f.maxW && META.w[i] && META.w[i] > f.maxW) continue;
     if (f.maxW && f.strictDims && !META.w[i]) continue;
     idx.push(i);
@@ -135,7 +195,7 @@ async function search({ q, image, likeId, filters, limit }) {
     out.push(i); if (out.length >= limit) break;
   }
   const items = out.map(i => ({ id: i, n: META.n[i], i: META.i[i], u: META.u[i], v: VENDORS[META.v[i]], c: META.c[i], d: META.d[i], s: META.s[i], score: score[i] }));
-  post('results', { items, total: idx.length, ms: Math.round(performance.now() - t0), note });
+  post('results', { items, total: idx.length, ms: Math.round(performance.now() - t0), note, dims: hasDims ? describeDims(dq) : '', noSize });
 }
 
 

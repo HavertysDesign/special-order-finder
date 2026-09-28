@@ -84,7 +84,8 @@ function render(items, total, ms, note) {
   const R = $('#results'); R.innerHTML = '';
   items.forEach((it) => R.appendChild(card(it)));
   $('#moreBtn').hidden = items.length < state.limit;
-  let msg = items.length ? `Top ${items.length} matches` : 'No matches — try fewer words or remove a filter.';
+  let msg = items.length ? `Top ${items.length} matches` : 'No matches. Try fewer words, a wider size, or remove a filter.';
+  if (state.lastDims) msg += ` · only pieces within 5" of <b>${state.lastDims}</b>`;
   if (note === 'keyword' && !state.textReady) msg += ' · keyword matches while the smart search loads…';
   setStatus(msg);
 }
@@ -119,7 +120,7 @@ worker.onmessage = (e) => {
     if (m.which === 'text') { state.textReady = true; if ($('#q').value.trim() && state.lastNote === 'keyword') run(); else if (!running) setStatus(''); }
     if (m.which === 'vision') state.visionReady = true;
   } else if (m.type === 'results') {
-    running = false; state.lastNote = m.note; render(m.items, m.total, m.ms, m.note);
+    running = false; state.lastNote = m.note; state.lastDims = m.dims; render(m.items, m.total, m.ms, m.note);
     if (pending) { pending = false; run(); }
   } else if (m.type === 'roomBoxes') { onRoomBoxes(m); setStatus(''); }
   else if (m.type === 'roomRow') { onRoomRow(m); }
