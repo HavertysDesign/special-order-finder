@@ -1,5 +1,5 @@
 // Catalog files are versioned (?v=...) so they can be cached for good; everything else is network-first.
-const C="sof-v22";
+const C="sof-v23";
 self.addEventListener('install',e=>self.skipWaiting());
 self.addEventListener('activate',e=>e.waitUntil((async()=>{for(const k of await caches.keys()) if(k!==C) await caches.delete(k); await self.clients.claim();})()));
 self.addEventListener('fetch',e=>{
@@ -12,5 +12,6 @@ self.addEventListener('fetch',e=>{
     return;
   }
   if(u.pathname.endsWith('version.json'))return;
-  e.respondWith(fetch(e.request).then(r=>{const c=r.clone();caches.open(C).then(x=>x.put(e.request,c));return r;}).catch(()=>caches.match(e.request)));
+  // always ask GitHub whether there's a newer copy (cheap when nothing changed), so updates show on a normal reload
+  e.respondWith(fetch(new Request(e.request,{cache:'no-cache'})).then(r=>{if(r.ok){const c=r.clone();caches.open(C).then(x=>x.put(e.request,c));}return r;}).catch(()=>caches.match(e.request)));
 });
