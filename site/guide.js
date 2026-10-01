@@ -192,7 +192,7 @@
     $('.gdot').hidden = !chat.length; $('#gClear').hidden = !chat.length;
     if (scrollToLast) { const last = thread.lastElementChild && thread.lastElementChild.previousElementSibling; if (last) body.scrollTop = last.offsetTop - 8; }
   }
-  function add(m) { chat.push(m); chat = chat.slice(-30); store.set('sof-guide-chat', chat); render(true); }
+  function add(m) { chat.push(m); chat = chat.slice(-30); store.set('sof-guide-chat', chat); render(true); layout(); }
   function showAll() {
     const groups = [...new Set(T.map((t) => t.group))];
     menu.innerHTML = `<button type="button" class="glink back" data-menu="less">← Hide topics</button>` + groups.map((g) => `<div class="gsub">${esc(g)}</div>${topicButtons(T.filter((t) => t.group === g).map((t) => t.id))}`).join('');
@@ -218,6 +218,15 @@
 
   // pos = where the button's bottom-right corner sits, as distances from the right/bottom edges (survives window resizing)
   let pos = store.get('sof-guide-pos', null);
+  // full height the panel would like: header + question box + the whole conversation (never its current, squeezed size)
+  function naturalHeight() { return $('#gHead').offsetHeight + $('#gForm').offsetHeight + body.scrollHeight + 2; }
+  // once the panel has been dragged by its header, it stays where it was put
+  let ppos = store.get('sof-guide-ppos', null);
+  function placePanel(W, H, m) {
+    const pw = Math.min(400, W - 16); panel.style.width = pw + 'px';
+    const left = Math.min(Math.max(ppos.l, m), W - pw - m), top = Math.min(Math.max(ppos.t, m), H - 200 - m);
+    Object.assign(panel.style, { left: left + 'px', top: top + 'px', right: 'auto', bottom: 'auto', maxHeight: Math.min(640, H - top - m) + 'px' });
+  }
   function layout() {
     const W = innerWidth, H = innerHeight, bw = btn.offsetWidth, bh = btn.offsetHeight, m = 8;
     const lift = !pos && root.classList.contains('lift') ? 66 : 0;
@@ -225,10 +234,11 @@
     r = Math.min(Math.max(r, m), W - bw - m); bt = Math.min(Math.max(bt, m), H - bh - m);
     Object.assign(btn.style, { right: r + 'px', bottom: bt + 'px', left: 'auto', top: 'auto' });
     if (panel.hidden) return;
+    if (ppos) { placePanel(W, H, m); return; }
     const pw = Math.min(400, W - 16); panel.style.width = pw + 'px';
     const bx = W - r - bw, by = H - bt - bh; // button's top-left
     // panel above or below the button, whichever has room (shrinking to fit); if neither does, beside it
-    const want = Math.min(panel.scrollHeight || 640, 640), up = by - 10 - m, down = H - (by + bh + 10) - m;
+    const want = Math.min(naturalHeight(), 640), up = by - 10 - m, down = H - (by + bh + 10) - m;
     let top, left, maxH;
     const sideX = bx + bw / 2 < W / 2 ? bx : bx + bw - pw;
     if (want <= up) { top = by - 10 - want; maxH = want; left = sideX; }
@@ -251,6 +261,7 @@
     handle.addEventListener('pointermove', (e) => {
       if (!st) return; const dx = e.clientX - st.x, dy = e.clientY - st.y;
       if (!st.moved && Math.hypot(dx, dy) < 6) return;
+      if (!st.moved && ppos) { ppos = null; store.set('sof-guide-ppos', null); }
       st.moved = true; root.classList.add('dragging');
       pos = { r: st.r - dx, b: st.b - dy }; layout();
     });
@@ -260,9 +271,25 @@
     handle.addEventListener('pointerup', end); handle.addEventListener('pointercancel', end);
   }
   draggable(btn, () => (panel.hidden ? open() : shut()));
-  draggable($('#gHead'), null);
+  (() => {
+    const head = $('#gHead'); let st = null;
+    head.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 || e.target.closest('.gtools')) return;
+      const pr = panel.getBoundingClientRect(); st = { x: e.clientX, y: e.clientY, l: pr.left, t: pr.top };
+      e.preventDefault(); head.setPointerCapture(e.pointerId); root.classList.add('dragging');
+    });
+    head.addEventListener('pointermove', (e) => {
+      if (!st) return; const W = innerWidth, H = innerHeight, pw = panel.offsetWidth, ph = panel.offsetHeight, m = 8;
+      const l = Math.min(Math.max(st.l + e.clientX - st.x, m), W - pw - m), t = Math.min(Math.max(st.t + e.clientY - st.y, m), H - Math.min(ph, 200) - m);
+      Object.assign(panel.style, { left: l + 'px', top: t + 'px' }); // move only: width and height stay the same
+    });
+    const end = () => { if (!st) return; st = null; root.classList.remove('dragging');
+      const pr = panel.getBoundingClientRect(); ppos = { l: pr.left, t: pr.top }; store.set('sof-guide-ppos', ppos);
+      panel.style.maxHeight = Math.min(640, innerHeight - pr.top - 8) + 'px'; };
+    head.addEventListener('pointerup', end); head.addEventListener('pointercancel', end);
+  })();
   btn.addEventListener('click', (e) => { if (e.detail === 0) (panel.hidden ? open() : shut()); }); // keyboard (Enter/Space)
-  btn.addEventListener('dblclick', () => { pos = null; store.set('sof-guide-pos', null); layout(); }); // double-click: back to the corner
+  btn.addEventListener('dblclick', () => { pos = null; ppos = null; store.set('sof-guide-pos', null); store.set('sof-guide-ppos', null); layout(); }); // double-click: back to the corner
 
   render(false); layout();
   if (store.get('sof-guide-open', false) && chat.length) open();
