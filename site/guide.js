@@ -150,62 +150,122 @@
 
   // --- UI ---
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+  const store = { get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} } };
   const root = document.createElement('div'); root.className = 'guide';
   root.innerHTML = `
-    <button type="button" class="gbtn" id="gOpen" aria-haspopup="dialog" aria-controls="gPanel"><span aria-hidden="true">?</span> Need help?</button>
+    <button type="button" class="gbtn" id="gOpen" aria-haspopup="dialog" aria-controls="gPanel" title="Drag to move"><span aria-hidden="true">?</span> Need help?<i class="gdot" hidden></i></button>
     <div class="gpanel" id="gPanel" role="dialog" aria-label="Help" hidden>
-      <div class="ghead"><b>How can I help?</b><button type="button" id="gClose" aria-label="Close help">✕</button></div>
+      <div class="ghead" id="gHead" title="Drag here to move">
+        <b>How can I help?</b>
+        <div class="gtools">
+          <button type="button" id="gClear" class="gclear" title="Start a new conversation">Clear</button>
+          <button type="button" id="gMin" aria-label="Minimize help (your conversation is kept)" title="Minimize (your conversation is kept)">&#8211;</button>
+        </div>
+      </div>
+      <div class="gbody" id="gBody"><div id="gThread"></div><div id="gMenu"></div></div>
       <form class="gask" id="gForm" autocomplete="off">
         <label for="gQ" class="gl">Type your question in your own words</label>
         <div class="grow"><input id="gQ" type="search" placeholder="e.g. how do I save a chair for my client?"><button class="gasknow">Ask</button></div>
       </form>
-      <div class="gbody" id="gBody"></div>
     </div>
     <div class="gspot" id="gSpot" hidden><div class="gtip" id="gTip"></div></div>`;
   document.body.appendChild(root);
-  const panel = $('#gPanel'), body = $('#gBody');
+  const panel = $('#gPanel'), body = $('#gBody'), thread = $('#gThread'), menu = $('#gMenu'), btn = $('#gOpen');
+  const byId = (id) => T.find((x) => x.id === id);
 
-  function home() {
-    body.innerHTML = `<div class="gsub">Popular questions</div><div class="gpop">${POPULAR.map((id) => { const t = T.find((x) => x.id === id); return `<button type="button" data-t="${id}">${esc(t.title)}</button>`; }).join('')}</div>
-      <button type="button" class="glink" id="gAll">See all help topics</button>`;
-    bind();
+  // The conversation: [{q, t, o:[ids]}], kept in this browser so it survives minimizing, closing and reloading.
+  let chat = store.get('sof-guide-chat', []).filter((m) => !m.t || byId(m.t)).slice(-30);
+  const topicButtons = (ids) => `<div class="glist">${ids.map((id) => `<button type="button" data-t="${id}">${esc(byId(id).title)}</button>`).join('')}</div>`;
+  function msgHtml(m, i) {
+    const you = `<div class="gyou">${esc(m.q)}</div>`;
+    if (!m.t) return you + `<div class="gans"><p class="gmiss">I’m not sure about that one. Try asking with different words, or pick a topic below.</p></div>`;
+    const t = byId(m.t);
+    return you + `<div class="gans"><h3 class="gt">${esc(t.title)}</h3><ol class="gsteps">${t.steps.map((x) => `<li>${x}</li>`).join('')}</ol>
+      ${t.show ? `<button type="button" class="gshow" data-show="${t.id}">👉 Show me where</button>` : ''}
+      ${m.o && m.o.length ? `<div class="gsub">Or did you mean…</div>${topicButtons(m.o)}` : ''}</div>`;
   }
-  function all() {
+  function render(scrollToLast) {
+    thread.innerHTML = chat.map(msgHtml).join('');
+    menu.innerHTML = chat.length
+      ? `<button type="button" class="glink" data-menu="all">See all help topics</button>`
+      : `<div class="gsub">Popular questions</div><div class="gpop">${POPULAR.map((id) => `<button type="button" data-t="${id}">${esc(byId(id).title)}</button>`).join('')}</div><button type="button" class="glink" data-menu="all">See all help topics</button><p class="gnote">Tip: drag the <b>Need help?</b> button anywhere on the screen. Click <b>\u2013</b> to tuck this away; your conversation stays here until you click <b>Clear</b>.</p>`;
+    $('.gdot').hidden = !chat.length; $('#gClear').hidden = !chat.length;
+    if (scrollToLast) { const last = thread.lastElementChild && thread.lastElementChild.previousElementSibling; if (last) body.scrollTop = last.offsetTop - 8; }
+  }
+  function add(m) { chat.push(m); chat = chat.slice(-30); store.set('sof-guide-chat', chat); render(true); }
+  function showAll() {
     const groups = [...new Set(T.map((t) => t.group))];
-    body.innerHTML = `<button type="button" class="glink back" id="gHome">← Back</button>` + groups.map((g) => `<div class="gsub">${esc(g)}</div><div class="glist">${T.filter((t) => t.group === g).map((t) => `<button type="button" data-t="${t.id}">${esc(t.title)}</button>`).join('')}</div>`).join('');
-    bind();
+    menu.innerHTML = `<button type="button" class="glink back" data-menu="less">← Hide topics</button>` + groups.map((g) => `<div class="gsub">${esc(g)}</div>${topicButtons(T.filter((t) => t.group === g).map((t) => t.id))}`).join('');
+    body.scrollTop = menu.offsetTop - 8;
   }
-  function answer(t, others = []) {
-    body.innerHTML = `<button type="button" class="glink back" id="gHome">← Back</button>
-      <h3 class="gt">${esc(t.title)}</h3>
-      <ol class="gsteps">${t.steps.map((s) => `<li>${s}</li>`).join('')}</ol>
-      ${t.show ? `<button type="button" class="gshow" id="gShow">👉 Show me where</button>` : ''}
-      ${others.length ? `<div class="gsub">Or did you mean…</div><div class="glist">${others.map((o) => `<button type="button" data-t="${o.id}">${esc(o.title)}</button>`).join('')}</div>` : ''}
-      <button type="button" class="glink" id="gAll">Not what you needed? See all help topics</button>`;
-    bind();
-    const sh = $('#gShow'); if (sh) sh.onclick = () => showMe(t);
-    body.scrollTop = 0;
-  }
-  function notFound(q) {
-    body.innerHTML = `<p class="gmiss">I\u2019m not sure about \u201c${esc(q)}\u201d. Try asking with different words, or pick one of these:</p><div class="glist">${T.map((t) => `<button type="button" data-t="${t.id}">${esc(t.title)}</button>`).join('')}</div>`;
-    bind();
-  }
-  function bind() {
-    body.querySelectorAll('[data-t]').forEach((b) => { b.onclick = () => answer(T.find((x) => x.id === b.dataset.t)); });
-    const a = $('#gAll'); if (a) a.onclick = all;
-    const h = $('#gHome'); if (h) h.onclick = home;
-  }
-  function open() { panel.hidden = false; $('#gOpen').setAttribute('aria-expanded', 'true'); if (!body.innerHTML) home(); setTimeout(() => $('#gQ').focus(), 50); }
-  function shut() { panel.hidden = true; $('#gOpen').setAttribute('aria-expanded', 'false'); }
-  $('#gOpen').onclick = () => (panel.hidden ? open() : shut());
-  $('#gClose').onclick = shut;
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { if (!$('#gSpot').hidden) unspot(); else if (!panel.hidden) shut(); } });
+  body.addEventListener('click', (e) => {
+    const t = e.target.closest('[data-t]'); if (t) { add({ q: byId(t.dataset.t).title, t: t.dataset.t }); return; }
+    const sh = e.target.closest('[data-show]'); if (sh) { showMe(byId(sh.dataset.show)); return; }
+    const mm = e.target.closest('[data-menu]'); if (mm) { if (mm.dataset.menu === 'all') showAll(); else render(false); }
+  });
   $('#gForm').onsubmit = (e) => {
-    e.preventDefault(); const q = $('#gQ').value.trim(); if (!q) { home(); return; }
-    const r = ask(q);
-    if (!r.length) notFound(q);
-    else answer(r[0].t, r.slice(1).filter((x) => x.s > r[0].s * 0.6).map((x) => x.t));
+    e.preventDefault(); const q = $('#gQ').value.trim(); if (!q) return;
+    const r = ask(q); $('#gQ').value = '';
+    add(r.length ? { q, t: r[0].t.id, o: r.slice(1).filter((x) => x.s > r[0].s * 0.6).map((x) => x.t.id) } : { q, t: null });
   };
+  $('#gClear').onclick = () => { chat = []; store.set('sof-guide-chat', chat); render(false); $('#gQ').focus(); };
+
+  // --- open / minimize; the panel sits next to the button wherever it has been moved ---
+  function open() { panel.hidden = false; btn.setAttribute('aria-expanded', 'true'); store.set('sof-guide-open', true); render(true); layout(); setTimeout(() => $('#gQ').focus({ preventScroll: true }), 50); }
+  function shut() { panel.hidden = true; btn.setAttribute('aria-expanded', 'false'); store.set('sof-guide-open', false); }
+  $('#gMin').onclick = shut;
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { if (!$('#gSpot').hidden) unspot(); else if (!panel.hidden) shut(); } });
+
+  // pos = where the button's bottom-right corner sits, as distances from the right/bottom edges (survives window resizing)
+  let pos = store.get('sof-guide-pos', null);
+  function layout() {
+    const W = innerWidth, H = innerHeight, bw = btn.offsetWidth, bh = btn.offsetHeight, m = 8;
+    const lift = !pos && root.classList.contains('lift') ? 66 : 0;
+    let r = pos ? pos.r : (W < 560 ? 12 : 18), bt = pos ? pos.b : (W < 560 ? 12 : 18) + lift;
+    r = Math.min(Math.max(r, m), W - bw - m); bt = Math.min(Math.max(bt, m), H - bh - m);
+    Object.assign(btn.style, { right: r + 'px', bottom: bt + 'px', left: 'auto', top: 'auto' });
+    if (panel.hidden) return;
+    const pw = Math.min(400, W - 16); panel.style.width = pw + 'px';
+    const bx = W - r - bw, by = H - bt - bh; // button's top-left
+    // panel above or below the button, whichever has room (shrinking to fit); if neither does, beside it
+    const want = Math.min(panel.scrollHeight || 640, 640), up = by - 10 - m, down = H - (by + bh + 10) - m;
+    let top, left, maxH;
+    const sideX = bx + bw / 2 < W / 2 ? bx : bx + bw - pw;
+    if (want <= up) { top = by - 10 - want; maxH = want; left = sideX; }
+    else if (want <= down) { top = by + bh + 10; maxH = want; left = sideX; }
+    else if (Math.max(up, down) >= 300) { maxH = Math.max(up, down); top = up >= down ? by - 10 - maxH : by + bh + 10; left = sideX; }
+    else { maxH = Math.min(want, H - 2 * m); top = Math.min(Math.max(by + bh / 2 - maxH / 2, m), H - maxH - m); left = bx - pw - 10 >= m ? bx - pw - 10 : bx + bw + 10; }
+    left = Math.min(Math.max(left, m), W - pw - m); top = Math.max(top, m);
+    Object.assign(panel.style, { left: left + 'px', top: top + 'px', right: 'auto', bottom: 'auto', maxHeight: maxH + 'px' });
+  }
+  addEventListener('resize', layout);
+
+  // Drag the button, or the panel by its header. A tap (no real movement) still opens/minimizes.
+  function draggable(handle, onTap) {
+    let st = null;
+    handle.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 || e.target.closest('.gtools')) return;
+      const br = btn.getBoundingClientRect(); st = { x: e.clientX, y: e.clientY, r: innerWidth - br.right, b: innerHeight - br.bottom, moved: false };
+      e.preventDefault(); handle.setPointerCapture(e.pointerId);
+    });
+    handle.addEventListener('pointermove', (e) => {
+      if (!st) return; const dx = e.clientX - st.x, dy = e.clientY - st.y;
+      if (!st.moved && Math.hypot(dx, dy) < 6) return;
+      st.moved = true; root.classList.add('dragging');
+      pos = { r: st.r - dx, b: st.b - dy }; layout();
+    });
+    const end = (e) => { if (!st) return; const moved = st.moved; st = null; root.classList.remove('dragging');
+      if (moved) { layout(); const br = btn.getBoundingClientRect(); pos = { r: innerWidth - br.right, b: innerHeight - br.bottom }; store.set('sof-guide-pos', pos); }
+      else if (onTap && e.type === 'pointerup') onTap(); };
+    handle.addEventListener('pointerup', end); handle.addEventListener('pointercancel', end);
+  }
+  draggable(btn, () => (panel.hidden ? open() : shut()));
+  draggable($('#gHead'), null);
+  btn.addEventListener('click', (e) => { if (e.detail === 0) (panel.hidden ? open() : shut()); }); // keyboard (Enter/Space)
+  btn.addEventListener('dblclick', () => { pos = null; store.set('sof-guide-pos', null); layout(); }); // double-click: back to the corner
+
+  render(false); layout();
+  if (store.get('sof-guide-open', false) && chat.length) open();
 
   // --- "Show me where": scroll to the control and circle it ---
   let spotTimer = null;
@@ -219,7 +279,7 @@
   async function showMe(t) {
     const s = t.show;
     if (t.id === 'sheet' || t.id === 'boards') closeBoard();
-    if (s.results && !(await needResults())) { answer(t); return; }
+    if (s.results && !(await needResults())) return;
     if (t.id === 'refine' || t.id === 'more') await wait(400);
     let el = $(s.sel);
     if (el && el.hidden) el = el.parentElement;
@@ -237,6 +297,6 @@
   // One friendly nudge for first-time visitors
   try { if (!localStorage.getItem('sof-guide-seen')) { setTimeout(() => { const b = $('#gOpen'); b.classList.add('nudge'); setTimeout(() => b.classList.remove('nudge'), 6000); }, 2500); localStorage.setItem('sof-guide-seen', '1'); } } catch {}
   // Lift the button above the compare bar when it's showing
-  const tray = $('#cmpTray'); if (tray) new MutationObserver(() => root.classList.toggle('lift', !tray.hidden)).observe(tray, { attributes: true, attributeFilter: ['hidden'] });
+  const tray = $('#cmpTray'); if (tray) new MutationObserver(() => { root.classList.toggle('lift', !tray.hidden); layout(); }).observe(tray, { attributes: true, attributeFilter: ['hidden'] });
   window.sofGuide = { ask, topics: T };
 })();
