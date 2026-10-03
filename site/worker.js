@@ -343,7 +343,7 @@ async function search({ q, image, imageKey, likeId, filters, limit, refine, colo
   if (color && COL) ordered = applyColor(ordered, score, color, !qt.length && !image && likeId == null);
   // Havertys' own pieces that match go to the top (from the strongest matches, so weak ones don't jump ahead)
   if (HAV >= 0 && !f.hideHavertys) {
-    const top = ordered.slice(0, 300), best = ordered.length ? score[ordered[0]] : 0, hav = top.filter(i => META.v[i] === HAV && score[i] >= best - HAVM);
+    const best = ordered.length ? score[ordered[0]] : 0, hav = ordered.filter(i => META.v[i] === HAV && score[i] >= best - HAVM).slice(0, 100);
     if (hav.length) { const hs = new Set(hav); ordered = hav.concat(ordered.filter(i => !hs.has(i))); }
   }
   // dedupe variants: same image, or same vendor+name
