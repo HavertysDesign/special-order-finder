@@ -1,5 +1,5 @@
 // Catalog files are versioned (?v=...) so they can be cached for good; everything else is network-first.
-const C="sof-v26";
+const C="sof-v27";
 self.addEventListener('install',e=>self.skipWaiting());
 self.addEventListener('activate',e=>e.waitUntil((async()=>{for(const k of await caches.keys()) if(k!==C) await caches.delete(k); await self.clients.claim();})()));
 self.addEventListener('fetch',e=>{

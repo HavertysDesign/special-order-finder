@@ -12,7 +12,7 @@ async function fromModels(fn) {
   catch (e) { if (env.remoteHost !== SITE_MODELS) throw e; useHF(); try { return await retry(fn, 2); } finally { useSiteModels(); } }
 }
 const MODEL = 'Xenova/mobileclip_s0';
-const HAVM = 0.045; // how close to the best match a Havertys piece must be to move to the top
+const HAVM = 0.05; // how close to the best Havertys match a Havertys piece must be to move to the top
 let HAV = -1, QS = null, COL = null, META = null, EMB = null, DIM = 0, N = 0, PCA = null, TXT = null, NAMELC = null, VENDORS = [], TYPES = [];
 let tok, textModel, proc, visionModel, textReady = null, visionReady = null;
 
@@ -343,7 +343,23 @@ async function search({ q, image, imageKey, likeId, filters, limit, refine, colo
   if (color && COL) ordered = applyColor(ordered, score, color, !qt.length && !image && likeId == null);
   // Havertys' own pieces that match go to the top (from the strongest matches, so weak ones don't jump ahead)
   if (HAV >= 0 && !f.hideHavertys) {
-    const best = ordered.length ? score[ordered[0]] : 0, hav = ordered.filter(i => META.v[i] === HAV && score[i] >= best - HAVM).slice(0, 100);
+    // A Havertys piece goes first when it is the kind of thing being searched for, either:
+    //  - every search word is in its name/description (plurals ignored), or
+    //  - the smart search scores it close to the best Havertys match (catches "couch" for sofas),
+    // and it is the same kind of product as the top results (so "sofa" doesn't lift sofa tables).
+    let bestHav = -Infinity; for (const i of ordered) if (META.v[i] === HAV && score[i] > bestHav) bestHav = score[i];
+    const at = (r) => ordered.length ? score[ordered[Math.min(r, ordered.length - 1)]] : 0;
+    const tc = {}; let domT = -1;
+    for (const i of ordered.slice(0, 20)) { tc[META.t[i]] = (tc[META.t[i]] || 0) + 1; if (tc[META.t[i]] >= 10) domT = META.t[i]; }
+    const stem = (t) => t.replace(/(es|s)$/, '');
+    const words = qt.filter(t => !/^\d/.test(t)).map(stem).filter(t => t.length > 1);
+    const near = Math.max(at(299), bestHav - HAVM), wide = at(3000);
+    const hav = ordered.filter(i => {
+      if (META.v[i] !== HAV) return false;
+      if (domT >= 0 && META.t[i] !== domT && !(tset && tset.has(META.t[i]))) return false;
+      if (score[i] >= near) return true;
+      return words.length > 0 && score[i] >= wide && words.every(w => NAMELC[i].includes(w) || TXT[i].includes(w));
+    }).slice(0, 200);
     if (hav.length) { const hs = new Set(hav); ordered = hav.concat(ordered.filter(i => !hs.has(i))); }
   }
   // dedupe variants: same image, or same vendor+name
