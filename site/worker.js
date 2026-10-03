@@ -12,7 +12,8 @@ async function fromModels(fn) {
   catch (e) { if (env.remoteHost !== SITE_MODELS) throw e; useHF(); try { return await retry(fn, 2); } finally { useSiteModels(); } }
 }
 const MODEL = 'Xenova/mobileclip_s0';
-let QS = null, COL = null, META = null, EMB = null, DIM = 0, N = 0, PCA = null, TXT = null, NAMELC = null, VENDORS = [], TYPES = [];
+const HAVM = 0.045; // how close to the best match a Havertys piece must be to move to the top
+let HAV = -1, QS = null, COL = null, META = null, EMB = null, DIM = 0, N = 0, PCA = null, TXT = null, NAMELC = null, VENDORS = [], TYPES = [];
 let tok, textModel, proc, visionModel, textReady = null, visionReady = null;
 
 const post = (type, data) => self.postMessage({ type, ...data });
@@ -47,6 +48,7 @@ async function loadCatalog() {
   }
   try { const r = await fetch('data/col.bin?v=' + v); if (r.ok) { const b = new Uint8Array(await r.arrayBuffer()); if (b.length === N * 12) COL = b; } } catch {}
   QS = new Uint8Array(N); for (const i of meta.qs || []) QS[i] = 1;
+  HAV = VENDORS.indexOf('Havertys');
   await loadRules();
   post('catalog', { qsVendors: [...new Set((meta.qs || []).map(i => VENDORS[meta.v[i]]))].sort(), refine: Object.entries(REFINE).map(([k, r]) => [k, r.label]), n: N, vendors: VENDORS, types: TYPES, updated: meta.updated, vcounts: meta.vcounts, typeImg: meta.typeImg || [], tcounts: meta.tcounts || [] });
 }
@@ -329,6 +331,7 @@ async function search({ q, image, imageKey, likeId, filters, limit, refine, colo
     if (tset && !tset.has(META.t[i])) continue;
     if (f.soOnly && META.so && META.so[i] === 0) continue;
     if (f.quick && !QS[i]) continue;
+    if (f.hideHavertys && META.v[i] === HAV) continue;
     if (hasDims) { const fd = fitsDims(i, dq); if (fd <= 0) { if (fd === 0 && score[i] > 0.2) noSize++; continue; } }
     if (f.maxW && META.w[i] && META.w[i] > f.maxW) continue;
     if (f.maxW && f.strictDims && !META.w[i]) continue;
@@ -338,6 +341,11 @@ async function search({ q, image, imageKey, likeId, filters, limit, refine, colo
   let ordered = idx;
   if (refine && refine.length) ordered = await applyRefine(idx, score, refine);
   if (color && COL) ordered = applyColor(ordered, score, color, !qt.length && !image && likeId == null);
+  // Havertys' own pieces that match go to the top (from the strongest matches, so weak ones don't jump ahead)
+  if (HAV >= 0 && !f.hideHavertys) {
+    const top = ordered.slice(0, 300), best = ordered.length ? score[ordered[0]] : 0, hav = top.filter(i => META.v[i] === HAV && score[i] >= best - HAVM);
+    if (hav.length) { const hs = new Set(hav); ordered = hav.concat(ordered.filter(i => !hs.has(i))); }
+  }
   // dedupe variants: same image, or same vendor+name
   const out = [], seenImg = new Set(), seenName = new Set();
   // variety: in the first 30 results, no more than 5 from one vendor (the rest follow after)
@@ -347,7 +355,7 @@ async function search({ q, image, imageKey, likeId, filters, limit, refine, colo
     const key = META.v[i] + '|' + NAMELC[i].replace(/[^a-z0-9]/g, '');
     if (seenImg.has(META.i[i]) || seenName.has(key)) continue;
     seenImg.add(META.i[i]); seenName.add(key);
-    if (out.length < 30 && (perV[META.v[i]] || 0) >= 5 && !(vset && vset.size === 1)) { later.push(i); continue; }
+    if (out.length < 30 && META.v[i] !== HAV && (perV[META.v[i]] || 0) >= 5 && !(vset && vset.size === 1)) { later.push(i); continue; }
     perV[META.v[i]] = (perV[META.v[i]] || 0) + 1;
     out.push(i); if (out.length >= limit) break;
     if (out.length === 30) { while (later.length && out.length < limit) out.push(later.shift()); if (out.length >= limit) break; }
@@ -464,6 +472,7 @@ async function roomMatch({ box, typeName, filters, limit }) {
     if (vset && !vset.has(META.v[i])) continue;
     if (f.soOnly && META.so && META.so[i] === 0) continue;
     if (f.quick && !QS[i]) continue;
+    if (f.hideHavertys && META.v[i] === HAV) continue;
     if (f.maxW && META.w[i] && META.w[i] > f.maxW) continue;
     idx.push(i);
   }
@@ -665,6 +674,8 @@ async function roomHelper({ image, imageKey, text, filters, palette: userPalette
     if (vset && !vset.has(META.v[i])) continue;
     if (f.soOnly && META.so && META.so[i] === 0) continue;
     if (f.quick && !QS[i]) continue;
+    if (f.hideHavertys && META.v[i] === HAV) continue;
+    if (TYPES[ti] === 'Rugs' && /\brug pads?\b|\brug grip/.test(NAMELC[i])) continue; // a pad isn't a rug for the room
     if (f.maxW && META.w[i] && META.w[i] > f.maxW) continue;
     if (hasDims && fitsDims(i, dq) <= 0) continue;
     idx.push(i);
@@ -685,11 +696,12 @@ async function roomHelper({ image, imageKey, text, filters, palette: userPalette
   });
   const zS = zs(styleSim), zW = zs(words), zC = zs(col);
   const tot = idx.map((i, k) => 0.6 * zS[k] + 0.9 * zW[k] + (act.length ? 1.3 : 0) * zC[k]);
-  const order = idx.map((i, k) => [i, tot[k]]).sort((a, b) => b[1] - a[1]).map(x => x[0]);
+  const ranked = idx.map((i, k) => [i, tot[k]]).sort((a, b) => b[1] - a[1]); let order = ranked.map(x => x[0]);
+  if (HAV >= 0 && !f.hideHavertys) { const tb = ranked.length ? ranked[0][1] : 0, hav = ranked.slice(0, 300).filter(x => META.v[x[0]] === HAV && x[1] >= tb - 0.8 && !NAMELC[x[0]].includes("rug pad")).map(x => x[0]), hs = new Set(hav); order = hav.concat(order.filter(i => !hs.has(i))); }
   const out = [], seenImg = new Set(), seenName = new Set(), perV = {};
   for (const i of order) {
     const key = META.v[i] + '|' + NAMELC[i].replace(/[^a-z0-9]/g, ''); if (seenImg.has(META.i[i]) || seenName.has(key)) continue;
-    if (out.length < 24 && (perV[META.v[i]] || 0) >= 5 && !(vset && vset.size === 1)) continue;
+    if (out.length < 24 && META.v[i] !== HAV && (perV[META.v[i]] || 0) >= 5 && !(vset && vset.size === 1)) continue;
     seenImg.add(META.i[i]); seenName.add(key); perV[META.v[i]] = (perV[META.v[i]] || 0) + 1; out.push(i); if (out.length >= (limit || 60)) break;
   }
   post('roomStage', { text: '' });
@@ -738,6 +750,7 @@ async function complete({ id, filters, per }) {
       if (META.t[i] !== tt || i === id) continue;
       if (f.soOnly && META.so && META.so[i] === 0) continue;
       if (f.quick && !QS[i]) continue;
+    if (f.hideHavertys && META.v[i] === HAV) continue;
       if (vset && !vset.has(META.v[i])) continue;
       let a = 0, b = 0; for (let j = 0; j < DIM; j++) { const x = EMB[o + j] / 127; a += (x - ct[j]) * sn[j]; b += x * v[j]; }
       sc.push([i, a + 0.35 * b]);

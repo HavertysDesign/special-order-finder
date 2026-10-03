@@ -29,6 +29,8 @@ JOBS={
  'besthf':(['best-home-furnishings'],[[PY,'v_pw.py','best-home-furnishings']],3600),
  'bassett':(['bassett-mirror'],[[PY,'v_pw.py','bassett-mirror']],3600),
  'kas':(['kas-rugs'],[[PY,'v_pw.py','kas-rugs']],3600),
+ # Havertys' own catalog: exported from a browser session (havertys.com blocks servers); this step just keeps the saved file
+ 'havertys':(['havertys'],[[PY,'v_havertys.py']],60),
 }
 for k in ['amity-home','wesley-allen','artistic-leathers','cooper-classics','steve-silver','gascho','aspenhome','universal','sopoly','dw-silks','jonathan-louis']:
     JOBS[k]=([k],[[PY,'v_sitemap.py',k]],10800)

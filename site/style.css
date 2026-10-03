@@ -355,3 +355,5 @@ button.roombtn{background:none;font:inherit;font-size:15px}
 .gans{border-left:3px solid var(--wheat);padding:2px 0 6px 12px;margin-bottom:6px}
 .gans .gt{margin-top:2px}
 .gbody{position:relative}.gnote{font-size:13px;color:var(--muted);margin:12px 0 0}
+.havbadge{display:inline-block;margin-top:4px;font-size:11px;font-weight:700;padding:2px 7px;border-radius:2px;text-transform:uppercase;letter-spacing:.04em;align-self:flex-start;background:var(--slate);color:#fff}
+.card.hav .imgwrap{outline:2px solid var(--slate);outline-offset:-2px}

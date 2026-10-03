@@ -77,6 +77,9 @@
     <label class="sotoggle" title="Hide pieces outside Havertys' approved special-order categories for each vendor">
       <input type="checkbox" id="soOnly" checked> Only what we can special order <a href="rules.html" class="linkbtn" title="See or edit the approved vendor list">(list)</a>
     </label>
+    <label class="sotoggle" id="havWrap" title="Show Havertys' own products (listed first). Uncheck to see special-order vendors only">
+      <input type="checkbox" id="showHav" checked> Show Havertys products
+    </label>
     <label class="sotoggle" id="quickWrap" title="Only pieces the vendor lists as in stock or quick ship">
       <input type="checkbox" id="quickOnly"> Quick ship only
     </label>
@@ -226,6 +229,7 @@
   <article class="card">
     <a class="imgwrap" target="_blank" rel="noopener"><img loading="lazy" alt=""></a>
     <div class="vendor"></div>
+    <div class="havbadge" hidden title="Havertys' own product, not a special order">Havertys product</div>
     <div class="sobadge" hidden></div>
     <div class="qsbadge" hidden title="The vendor lists this as in stock or quick ship. Confirm availability before promising a date.">Quick ship</div>
     <h3 class="name"></h3>

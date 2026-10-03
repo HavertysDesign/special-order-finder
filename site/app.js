@@ -175,6 +175,7 @@ function card(it) {
   img.onerror = () => { img.style.opacity = .15; };
   n.querySelector('.vendor').textContent = it.v;
   n.querySelector('.qsbadge').hidden = !it.qs;
+  const hv = it.v === 'Havertys'; n.classList.toggle('hav', hv); n.querySelector('.havbadge').hidden = !hv;
   const so = n.querySelector('.sobadge');
   if (it.so === 0) { so.hidden = false; so.className = 'sobadge no'; so.textContent = 'Not on approved list'; so.title = `${it.v} is approved for: ${it.vr}`; }
   else if (it.so === 2) { so.hidden = false; so.className = 'sobadge check'; so.textContent = /price list/i.test(it.vr) ? 'Check price list' : 'Check approved list'; so.title = `${it.v} is approved for: ${it.vr}`; }
@@ -232,13 +233,13 @@ function run() {
   if (state.image && !state.visionReady) setStatus('Loading photo AI (first time only)…');
   else setStatus('Searching…');
   worker.postMessage({ type: 'search', q, image: state.image, imageKey: state.imageKey, likeId: state.likeId, limit: state.limit, refine: [...state.refine], color: state.color && { L: state.color.L, a: state.color.a, b: state.color.b },
-    filters: { types: [...state.types], vendors: state.vendor === '' || state.cust ? [] : [Number(state.vendor)], maxW: state.maxW, soOnly: state.soOnly, quick: state.quick } });
+    filters: { types: [...state.types], vendors: state.vendor === '' || state.cust ? [] : [Number(state.vendor)], maxW: state.maxW, soOnly: state.soOnly, quick: state.quick, hideHavertys: !state.showHav } });
 }
 
 worker.onmessage = (e) => {
   const m = e.data;
   if (m.type === 'catalog') {
-    VENDORS = m.vendors; TYPES = m.types; if (m.qsVendors && m.qsVendors.length) $('#quickWrap').title = 'Only pieces the vendor lists as in stock or quick ship. Stock info comes from: ' + m.qsVendors.join(', ') + '.'; REFINES = m.refine || []; state.catalogReady = true;
+    VENDORS = m.vendors; TYPES = m.types; $('#havWrap').hidden = !VENDORS.includes('Havertys'); if (m.qsVendors && m.qsVendors.length) $('#quickWrap').title = 'Only pieces the vendor lists as in stock or quick ship. Stock info comes from: ' + m.qsVendors.join(', ') + '.'; REFINES = m.refine || []; state.catalogReady = true;
     $('#catalogInfo').textContent = `Search ${m.n.toLocaleString()} pieces from ${VENDORS.length} special-order vendors by description or photo`;
     TYPEIMG = m.typeImg; TCOUNTS = m.tcounts; renderTiles();
     $('#updated').textContent = m.updated ? `Catalog updated ${m.updated}.` : '';
@@ -339,8 +340,11 @@ $('#swatchPhoto').onchange = async (e) => {
     ctx.drawImage(bmp, 0, 0, W, H); setColor(sampleAt(ctx, x, y, 5), 'Swatch');
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, 9, 0, 7); ctx.stroke(); ctx.strokeStyle = '#000'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(x, y, 11, 0, 7); ctx.stroke(); };
 };
+state.showHav = (() => { try { return localStorage.getItem('sof-show-hav') !== '0'; } catch { return true; } })();
 state.quick = (() => { try { return localStorage.getItem('sof-quick') === '1'; } catch { return false; } })();
 $('#quickOnly').checked = state.quick;
+$('#showHav').checked = state.showHav;
+$('#showHav').onchange = (e) => { state.showHav = e.target.checked; try { localStorage.setItem('sof-show-hav', state.showHav ? '1' : '0'); } catch {} state.limit = 60; run(); if (!$('#complete').hidden && state.completeItem) completeRoom(state.completeItem); };
 $('#quickOnly').onchange = (e) => { state.quick = e.target.checked; try { localStorage.setItem('sof-quick', state.quick ? '1' : '0'); } catch {} state.limit = 60; run(); if (!$('#complete').hidden && state.completeItem) completeRoom(state.completeItem); };
 $('#maxW').onchange = (e) => { const v = parseFloat(e.target.value); state.maxW = v > 0 ? v : null; run(); };
 $('#moreBtn').onclick = () => { state.limit += 60; run(); };
@@ -406,7 +410,7 @@ dz.addEventListener('drop', (e) => {
 
 // ---------- Shop the room ----------
 const room = { boxes: [], W: 0, H: 0, active: null, drawing: false, nextId: 100, busy: false };
-function roomFilters() { return { vendors: state.vendor === '' ? [] : [Number(state.vendor)], maxW: state.maxW, soOnly: state.soOnly, quick: state.quick }; }
+function roomFilters() { return { vendors: state.vendor === '' ? [] : [Number(state.vendor)], maxW: state.maxW, soOnly: state.soOnly, quick: state.quick, hideHavertys: !state.showHav }; }
 async function startRoom(file) {
   $('#complete').hidden = true; $('#helper').hidden = true; state.helperOn = false;
   if (!file) return;
@@ -504,7 +508,7 @@ const help = { image: null, key: 0, W: 0, H: 0, palette: null, drawn: null, draw
 const HELP_EX = ['I need a rug to go with this room. Use the colors in the pillows.', 'A table lamp for the side table that pulls colors from the art',
   'An accent chair that coordinates with the rug', 'Art above the sofa using the colors in the pillows', 'A coffee table that goes with the sofa'];
 HELP_EX.forEach((t) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = t; b.onclick = () => { $('#helpText').value = t; helpGo(); }; $('#helpEx').appendChild(b); });
-function helpFilters() { return { vendors: state.vendor === '' || state.cust ? [] : [Number(state.vendor)], maxW: state.maxW, soOnly: state.soOnly, quick: state.quick }; }
+function helpFilters() { return { vendors: state.vendor === '' || state.cust ? [] : [Number(state.vendor)], maxW: state.maxW, soOnly: state.soOnly, quick: state.quick, hideHavertys: !state.showHav }; }
 function helpOpen() {
   $('#helper').hidden = false; $('#room').hidden = true; $('#complete').hidden = true; state.helperOn = true;
   $('#helper').scrollIntoView({ behavior: 'smooth', block: 'start' }); if (help.image) $('#helpText').focus();
@@ -626,7 +630,7 @@ function completeRoom(it) {
   A.querySelector('img').src = it.i; A.querySelector('strong').textContent = state.cust ? custName(it) : it.n;
   A.querySelector('.ad').textContent = state.cust ? (it.d || '') : [it.v, it.d].filter(Boolean).join(' · ');
   $('#completeRows').innerHTML = '<div class="rrwait">Finding pieces that match this style and color…</div>';
-  worker.postMessage({ type: 'complete', id: it.id, filters: { vendors: state.vendor === '' || state.cust ? [] : [Number(state.vendor)], soOnly: state.soOnly, quick: state.quick } });
+  worker.postMessage({ type: 'complete', id: it.id, filters: { vendors: state.vendor === '' || state.cust ? [] : [Number(state.vendor)], soOnly: state.soOnly, quick: state.quick, hideHavertys: !state.showHav } });
   $('#complete').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 function onComplete(m) {
